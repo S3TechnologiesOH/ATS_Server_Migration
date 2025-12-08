@@ -1,0 +1,42 @@
+{
+  "name": "application-management-dashboard-backend",
+  "version": "1.0.0",
+  "description": "Express.js application with PostgreSQL",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "migrate": "node-pg-migrate",
+    "migrate:create": "node-pg-migrate create"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.8.1",
+    "axios": "^1.7.2",
+    "connect-pg-simple": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "express-session": "^1.18.2",
+    "form-data": "^4.0.4",
+    "jsonrepair": "^3.4.0",
+    "jwks-rsa": "^3.2.0",
+    "mailgun.js": "^12.1.0",
+    "mammoth": "^1.6.0",
+    "mime-types": "^2.1.35",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^7.0.6",
+    "openai": "^6.0.0",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.11.3",
+    "pg-pool": "^3.6.1",
+    "socket.io": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "node-pg-migrate": "^6.2.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  express-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # ports:                       # (Optional) keep commented out to rely solely on Traefik
+    #   - "3001:3000"             # Uncomment if you still need direct host access
+    environment:
+      - NODE_ENV=production
+      # Main database
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Multi-tenant configuration
+      - APPS=${APPS}
+      - DEFAULT_APP=${DEFAULT_APP}
+      # ATS database (separate database for ATS app)
+      - ATS_DB_HOST=${ATS_DB_HOST}
+      - ATS_DB_PORT=${ATS_DB_PORT}
+      - ATS_DB_NAME=${ATS_DB_NAME}
+      - ATS_DB_USER=${ATS_DB_USER}
+      - ATS_DB_PASSWORD=${ATS_DB_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      # File storage and search
+      - FILES_ROOT=/app/app/uploads
+      - FILES_PUBLIC_URL=https://ats.s3protection.com/api/files
+      - DEBUG_SEARCH=${DEBUG_SEARCH}
+      - DEBUG_UPLOADS=${DEBUG_UPLOADS}
+      - SESSION_SECRET=${SESSION_SECRET}
+      # Azure AD (delegated auth for dashboard)
+      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID}
+      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID}
+      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET}
+      - AZURE_AD_REDIRECT_URI=https://ats.s3protection.com/api/auth/callback
+      # Public site -> API bearer validation (app-only)
+      - OAUTH_TENANT_ID=${OAUTH_TENANT_ID}
+      - OAUTH_API_AUDIENCE=${OAUTH_API_AUDIENCE}
+      - OAUTH_REQUIRED_ROLE=${OAUTH_REQUIRED_ROLE}
+      - REQUIRE_BEARER_FOR_PUBLIC_APPLY=${REQUIRE_BEARER_FOR_PUBLIC_APPLY}
+      # CORS for public submissions
+      - PUBLIC_APP_ALLOWED_ORIGIN=${PUBLIC_APP_ALLOWED_ORIGIN}
+      # Optional: enable sending notification emails via Graph using app-only auth
+      - GRAPH_PUSH_ENABLED=${GRAPH_PUSH_ENABLED}
+      - GRAPH_NOTIFY_MAILBOX=${GRAPH_NOTIFY_MAILBOX}
+      # LinkedIn OAuth for job applications
+      - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID}
+      - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET}
+      - AUTH_DEBUG=${AUTH_DEBUG}
+      # Mailgun
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
+      # Updates
+    volumes:
+      - ./app:/app/app  # Maps local app directory to container's upload storage path
+      - app_uploads:/app/app/uploads  # Persistent volume for uploaded files
+    restart: unless-stopped
+    container_name: ats-server
+    networks:
+      - express-network    # Internal network
+      - root_default       # Shared external network where Traefik lives
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # API routes at ats.s3protection.com/api/*
+      - "traefik.http.routers.ats-api.rule=Host(`ats.s3protection.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.ats-api.entrypoints=websecure"
+      - "traefik.http.routers.ats-api.tls=true"
+      - "traefik.http.routers.ats-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.ats-api.middlewares=ats-stripprefix"
+      - "traefik.http.middlewares.ats-stripprefix.stripprefix.prefixes=/api"
+      - "traefik.http.services.ats.loadbalancer.server.port=3000"
+
+networks:
+  express-network:
+    driver: bridge
+  root_default:
+    external: true
+
+volumes:
+  app_uploads:  # Persistent volume for file uploads
