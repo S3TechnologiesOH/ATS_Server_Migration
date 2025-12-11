@@ -36,7 +36,7 @@ services:
       - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID}
       - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID}
       - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET}
-      - AZURE_AD_REDIRECT_URI=https://ats.s3protection.com/api/auth/callback
+      - AZURE_AD_REDIRECT_URI=${AZURE_AD_REDIRECT_URI}
       # Public site -> API bearer validation (app-only)
       - OAUTH_TENANT_ID=${OAUTH_TENANT_ID}
       - OAUTH_API_AUDIENCE=${OAUTH_API_AUDIENCE}
