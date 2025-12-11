@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(dir /b \"d:\\_Nancy Projects\\ATS_Server_Migration\\routes\\apps\")",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(powershell -Command \"Get-ChildItem -Path ''d:\\_Nancy Projects\\ATS_Server_Migration'' -Filter ''.env'' -Force | Select-Object FullName\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
