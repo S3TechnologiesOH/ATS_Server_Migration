@@ -1316,6 +1316,21 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
     let { url, key, ttl } = req.query;
     ttl = parseInt(ttl, 10);
     const ttlSeconds = Number.isFinite(ttl) && ttl > 0 ? ttl : 300;
+
+    // Auto-fix legacy URLs with old domain patterns
+    if (url) {
+      const originalUrl = url;
+      // Fix api.s3protection.com -> ats.s3protection.com/api
+      if (url.includes("api.s3protection.com")) {
+        url = url.replace(/https?:\/\/api\.s3protection\.com\/?/, "https://ats.s3protection.com/api/");
+      }
+      // Fix any double slashes that might occur (except after https:)
+      url = url.replace(/([^:])\/+/g, "$1/");
+      if (url !== originalUrl) {
+        console.log(`[files/sign] Auto-fixed URL: ${originalUrl} -> ${url}`);
+      }
+    }
+
     if (!key) {
       if (!url) return res.status(400).json({ error: "key_or_url_required" });
       // Derive key from full URL by stripping the FILES_PUBLIC_URL prefix
@@ -1326,6 +1341,8 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
         // Fallback: try to interpret as already-relative
         key = String(url).replace(/^https?:\/\/[^/]+\//, "");
         if (key.startsWith("files/")) key = key.slice("files/".length);
+        // Also handle /api/files/ prefix from the new URL structure
+        if (key.startsWith("api/files/")) key = key.slice("api/files/".length);
       }
     }
     if (!key) return res.status(400).json({ error: "invalid_key" });
