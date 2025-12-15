@@ -75,6 +75,12 @@ services:
       - "traefik.http.routers.ats-api.middlewares=ats-stripprefix"
       - "traefik.http.middlewares.ats-stripprefix.stripprefix.prefixes=/api"
       - "traefik.http.services.ats.loadbalancer.server.port=3000"
+      # Socket.IO WebSocket routes at ats.s3protection.com/socket.io/*
+      - "traefik.http.routers.ats-ws.rule=Host(`ats.s3protection.com`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.ats-ws.entrypoints=websecure"
+      - "traefik.http.routers.ats-ws.tls=true"
+      - "traefik.http.routers.ats-ws.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.ats-ws.service=ats"
 
 networks:
   express-network:

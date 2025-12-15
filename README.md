@@ -13,7 +13,7 @@ Express + PostgreSQL backend with Azure AD (OIDC) authentication.
 * Node.js 18+
 * Docker (if running with compose)
 * Azure AD App Registration (Web)
-	* Redirect URI: `https://api.s3protection.com/auth/callback`
+	* Redirect URI: `https://ats.s3protection.com/api/auth/callback`
 
 ## Environment Variables
 Create a `.env` file (already gitignored):
