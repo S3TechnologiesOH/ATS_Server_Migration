@@ -18,12 +18,6 @@ services:
       # Multi-tenant configuration
       - APPS=${APPS}
       - DEFAULT_APP=${DEFAULT_APP}
-      # ATS database (separate database for ATS app)
-      - ATS_DB_HOST=${ATS_DB_HOST}
-      - ATS_DB_PORT=${ATS_DB_PORT}
-      - ATS_DB_NAME=${ATS_DB_NAME}
-      - ATS_DB_USER=${ATS_DB_USER}
-      - ATS_DB_PASSWORD=${ATS_DB_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL}
       # File storage and search
