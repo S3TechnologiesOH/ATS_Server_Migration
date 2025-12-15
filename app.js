@@ -1004,6 +1004,18 @@ if (fs.existsSync(appRoutesDir)) {
         );
         if (VERBOSE_APP_DEBUG)
           console.log(`Mounted routes for app '${aid}' from ${file}`);
+        // If ATS modular routes, initialize with dependencies (MSAL client, etc.)
+        if (aid === "ats" && typeof rtr.initRouters === "function") {
+          try {
+            rtr.initRouters({
+              graphMsal: msalClient,
+            });
+            if (VERBOSE_APP_DEBUG)
+              console.log(`Initialized ATS routers with MSAL client`);
+          } catch (initErr) {
+            console.error(`Failed to initialize ATS routers:`, initErr.message);
+          }
+        }
         // If ATS, start AI scoring backfill after mount
         if (aid === "ats" && typeof rtr.startBackfill === "function") {
           try {
