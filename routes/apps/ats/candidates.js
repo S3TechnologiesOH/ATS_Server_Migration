@@ -36,11 +36,11 @@ async function defaultBuildCandidateVM(db, candidateId) {
       a.${APP_PK} AS application_id,
       a.resume_url,
       a.cover_letter_url,
-      a.job_id,
+      a.job_requisition_id,
       a.application_date,
       a.status AS application_status,
-      j.title AS job_title,
-      j.location AS job_location
+      jl.job_title AS job_title,
+      jl.location AS job_location
     FROM ${PEOPLE_TABLE} p
     LEFT JOIN LATERAL (
       SELECT * FROM ${APP_TABLE}
@@ -48,7 +48,7 @@ async function defaultBuildCandidateVM(db, candidateId) {
       ORDER BY application_date DESC NULLS LAST
       LIMIT 1
     ) a ON TRUE
-    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON (a.job_requisition_id IS NOT NULL AND jl.job_requisition_id = a.job_requisition_id)
     WHERE p.${PEOPLE_PK} = $1`,
     [candidateId]
   );
@@ -78,7 +78,7 @@ async function defaultBuildCandidateVM(db, candidateId) {
     rating: row.rating || null,
     notes: row.notes || "",
     appliedAt: row.application_date,
-    jobId: row.job_id,
+    jobId: row.job_requisition_id,
     jobTitle: row.job_title || "",
     jobLocation: row.job_location || "",
     archived: row.archived || false,
