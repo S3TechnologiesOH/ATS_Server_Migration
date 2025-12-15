@@ -19,6 +19,12 @@ const {
   OPENAI_API_KEY,
 } = require("./helpers");
 
+// Default titleCase implementation (can be overridden via initCandidates)
+const defaultTitleCase = (str) => {
+  if (!str) return str;
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 // These functions need to be passed in during initialization
 let buildCandidateVM = null;
 let buildCandidateScoringContext = null;
@@ -27,21 +33,21 @@ let generateAndStoreCandidateScore = null;
 let enqueueCandidateScore = null;
 let getExtractedTextForUrl = null;
 let mapStatusToStage = null;
-let titleCase = null;
+let titleCase = defaultTitleCase;
 
 /**
  * Initialize the candidates router with required dependencies
  * @param {Object} deps - Dependencies object
  */
 function initCandidates(deps) {
-  buildCandidateVM = deps.buildCandidateVM;
-  buildCandidateScoringContext = deps.buildCandidateScoringContext;
-  getLatestCandidateScore = deps.getLatestCandidateScore;
-  generateAndStoreCandidateScore = deps.generateAndStoreCandidateScore;
-  enqueueCandidateScore = deps.enqueueCandidateScore;
-  getExtractedTextForUrl = deps.getExtractedTextForUrl;
-  mapStatusToStage = deps.mapStatusToStage;
-  titleCase = deps.titleCase;
+  if (deps.buildCandidateVM) buildCandidateVM = deps.buildCandidateVM;
+  if (deps.buildCandidateScoringContext) buildCandidateScoringContext = deps.buildCandidateScoringContext;
+  if (deps.getLatestCandidateScore) getLatestCandidateScore = deps.getLatestCandidateScore;
+  if (deps.generateAndStoreCandidateScore) generateAndStoreCandidateScore = deps.generateAndStoreCandidateScore;
+  if (deps.enqueueCandidateScore) enqueueCandidateScore = deps.enqueueCandidateScore;
+  if (deps.getExtractedTextForUrl) getExtractedTextForUrl = deps.getExtractedTextForUrl;
+  if (deps.mapStatusToStage) mapStatusToStage = deps.mapStatusToStage;
+  if (deps.titleCase) titleCase = deps.titleCase;
 }
 
 // POST /candidates/search - Lightweight search over extracted resume/cover text
