@@ -981,8 +981,19 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
 
 if (fs.existsSync(appRoutesDir)) {
   APP_IDS.forEach((aid) => {
-    const file = path.join(appRoutesDir, `${aid}.js`);
-    if (fs.existsSync(file)) {
+    // Check for modular structure first (e.g., ats/index.js), then fallback to single file (e.g., ats.js)
+    const modularDir = path.join(appRoutesDir, aid);
+    const modularFile = path.join(modularDir, "index.js");
+    const legacyFile = path.join(appRoutesDir, `${aid}.js`);
+
+    let file = null;
+    if (fs.existsSync(modularFile)) {
+      file = modularFile;
+    } else if (fs.existsSync(legacyFile)) {
+      file = legacyFile;
+    }
+
+    if (file) {
       try {
         const rtr = require(file);
         app.use(

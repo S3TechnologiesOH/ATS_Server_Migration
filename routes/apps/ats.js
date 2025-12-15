@@ -53,7 +53,7 @@ const ATS_ATTACHMENTS_TABLE =
 // File storage config (reuse app-level envs)
 const FILES_ROOT = process.env.FILES_ROOT || "/app/app/uploads";
 const FILES_PUBLIC_URL =
-  process.env.FILES_PUBLIC_URL || "https://api.s3protection.com/files";
+  process.env.FILES_PUBLIC_URL || "https://ats.s3protection.com/api/files";
 const MAX_UPLOAD_MB = process.env.MAX_UPLOAD_MB || "512";
 const MAX_UPLOAD_BYTES =
   Math.max(1, parseInt(MAX_UPLOAD_MB, 10) || 512) * 1024 * 1024;
@@ -1358,7 +1358,7 @@ const GRAPH_SCOPES = [
   "email",
 ];
 const GRAPH_REDIRECT_URI =
-  "https://api.s3protection.com/ats/api/ats/graph/callback"; // Graph-specific callback
+  "https://ats.s3protection.com/api/ats/api/ats/graph/callback"; // Graph-specific callback
 
 // Start Graph auth (delegated) for this user
 router.get("/graph/login", (req, res) => {
@@ -9181,7 +9181,7 @@ async function downloadAndStoreLinkedInPhoto(photoUrl, userId) {
 
     // Return relative URL for web access
     const FILES_PUBLIC_URL =
-      process.env.FILES_PUBLIC_URL || "https://api.s3protection.com/files";
+      process.env.FILES_PUBLIC_URL || "https://ats.s3protection.com/api/files";
     return `${FILES_PUBLIC_URL}/linkedin-photos/${filename}`;
   } catch (e) {
     console.error("LinkedIn photo download failed:", e.message);
@@ -9797,7 +9797,7 @@ router.post("/rejection-feedback/create", async (req, res) => {
     console.log("[ATS] Feedback request inserted successfully");
 
     // Generate the feedback URL using the API base URL (public route)
-    const baseUrl = process.env.API_BASE_URL || "https://api.s3protection.com";
+    const baseUrl = process.env.API_BASE_URL || "https://ats.s3protection.com";
     const feedbackUrl = `${baseUrl}/ats/api/ats/public/rejection-feedback/request/${token}`;
 
     console.log("[ATS] Creating feedback request - SUCCESS");
