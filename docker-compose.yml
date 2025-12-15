@@ -55,7 +55,8 @@ services:
       # Mailgun
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
       - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
-      # Updates
+      # Cross-site session for Electron app (file:// origin)
+      - CROSS_SITE_SESSION=1
     volumes:
       - ./app:/app/app  # Maps local app directory to container's upload storage path
       - app_uploads:/app/app/uploads  # Persistent volume for uploaded files
