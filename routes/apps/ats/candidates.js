@@ -38,9 +38,14 @@ async function defaultBuildCandidateVM(db, candidateId) {
       a.cover_letter_url,
       a.job_requisition_id,
       a.application_date,
-      a.status AS application_status,
       jl.job_title AS job_title,
-      jl.location AS job_location
+      jl.location AS job_location,
+      (SELECT s.status FROM ${DEFAULT_SCHEMA}.application_stages s
+       WHERE s.application_id = a.${APP_PK}
+       ORDER BY s.updated_at DESC NULLS LAST LIMIT 1) AS application_status,
+      (SELECT s.stage_name FROM ${DEFAULT_SCHEMA}.application_stages s
+       WHERE s.application_id = a.${APP_PK}
+       ORDER BY s.updated_at DESC NULLS LAST LIMIT 1) AS current_stage
     FROM ${PEOPLE_TABLE} p
     LEFT JOIN LATERAL (
       SELECT * FROM ${APP_TABLE}
@@ -73,7 +78,7 @@ async function defaultBuildCandidateVM(db, candidateId) {
     resumeUrl: row.resume_url || "",
     coverLetterUrl: row.cover_letter_url || "",
     status: row.application_status || "new",
-    stage: row.stage || "Screening",
+    stage: row.current_stage || "Screening",
     source: row.source || "",
     rating: row.rating || null,
     notes: row.notes || "",
