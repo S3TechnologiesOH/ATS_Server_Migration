@@ -54,11 +54,27 @@ const miscRouter = require("./misc");
 // Import helpers for initialization
 const helpers = require("./helpers");
 
+// Mount route modules immediately on require (not deferred to createRouter)
+// This ensures routes work when app.js does: const rtr = require('./routes/apps/ats/index.js')
+router.use("/candidates", candidatesRouter);
+router.use("/jobs", jobsRouter);
+router.use("/applications", applicationsRouter);
+router.use("/admin", adminRouter);
+router.use("/", graphRouter); // Graph routes have their own prefixes (/graph/*, /meetings, /emails)
+router.use("/reports", reportsRouter);
+router.use("/skills", skillsRouter);  // Skills CRUD routes (/skills)
+router.use("/", skillsRouter);  // Also mount at root for /candidates/:id/skills routes (backward compat)
+router.use("/preferences", preferencesRouter);
+router.use("/dashboard", dashboardRouter);
+router.use("/public", publicRouter);
+router.use("/", rejectionRouter); // Rejection routes (/send-rejection-email, /rejection-feedback/*, /public/rejection-feedback/*)
+router.use("/", miscRouter); // Misc routes (/health, /departments, /applicants/*, /debug/*, /candidates/:id/duplicate-applications, etc.)
+
 /**
- * Initialize the router with dependencies
- * This is called when the router is mounted and has access to the parent router's context
+ * Initialize routers with dependencies (optional - for dependency injection)
+ * This can be called after mounting if routers need external dependencies
  */
-function createRouter(dependencies = {}) {
+function initRouters(dependencies = {}) {
   const {
     buildCandidateVM,
     buildCandidateScoringContext,
@@ -129,26 +145,9 @@ function createRouter(dependencies = {}) {
       emailService,
     });
   }
-
-  // Mount route modules
-  router.use("/candidates", candidatesRouter);
-  router.use("/jobs", jobsRouter);
-  router.use("/applications", applicationsRouter);
-  router.use("/admin", adminRouter);
-  router.use("/", graphRouter); // Graph routes have their own prefixes (/graph/*, /meetings, /emails)
-  router.use("/reports", reportsRouter);
-  router.use("/skills", skillsRouter);  // Skills CRUD routes (/skills)
-  router.use("/", skillsRouter);  // Also mount at root for /candidates/:id/skills routes (backward compat)
-  router.use("/preferences", preferencesRouter);
-  router.use("/dashboard", dashboardRouter);
-  router.use("/public", publicRouter);
-  router.use("/", rejectionRouter); // Rejection routes (/send-rejection-email, /rejection-feedback/*, /public/rejection-feedback/*)
-  router.use("/", miscRouter); // Misc routes (/health, /departments, /applicants/*, /debug/*, /candidates/:id/duplicate-applications, etc.)
-
-  return router;
 }
 
-// Export the router and factory function
+// Export the router and init function
 module.exports = router;
-module.exports.createRouter = createRouter;
+module.exports.initRouters = initRouters;
 module.exports.helpers = helpers;
