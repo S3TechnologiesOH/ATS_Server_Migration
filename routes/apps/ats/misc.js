@@ -145,7 +145,8 @@ router.get("/applicants/history/:email", async (req, res) => {
     const email = req.params.email;
     const sql = `
       SELECT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
-             a.${APP_PK} as application_id, a.application_date, a.job_title,
+             a.${APP_PK} as application_id, a.application_date, a.job_requisition_id,
+             jl.job_title,
              (SELECT s.stage_name FROM ${DEFAULT_SCHEMA}.application_stages s
               WHERE s.application_id = a.${APP_PK}
               ORDER BY s.updated_at DESC LIMIT 1) as current_stage,
@@ -154,6 +155,7 @@ router.get("/applicants/history/:email", async (req, res) => {
               ORDER BY s.updated_at DESC LIMIT 1) as current_status
         FROM ${PEOPLE_TABLE} c
         JOIN ${APP_TABLE} a ON a.candidate_id = c.${PEOPLE_PK}
+        LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON (a.job_requisition_id IS NOT NULL AND jl.job_requisition_id = a.job_requisition_id)
        WHERE LOWER(c.email) = LOWER($1)
        ORDER BY a.application_date DESC`;
     const { rows } = await req.db.query(sql, [email]);
