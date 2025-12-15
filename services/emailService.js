@@ -241,7 +241,7 @@ class EmailService {
         const duration = Math.round((endDate - startDate) / 60000); // minutes
 
         // Base URL for action links (use environment variable or default)
-        const baseUrl = process.env.API_BASE_URL || 'https://api.s3protection.com';
+        const baseUrl = process.env.API_BASE_URL || 'https://ats.s3protection.com';
         const confirmUrl = `${baseUrl}/api/interview-reminders/confirm/${reminder_token}`;
         const cancelUrl = `${baseUrl}/api/interview-reminders/cancel/${reminder_token}`;
         const rescheduleUrl = `${baseUrl}/api/interview-reminders/reschedule/${reminder_token}`;
@@ -650,7 +650,7 @@ class EmailService {
      * @returns {Promise<Object>} Send result
      */
     async sendRejectionEmail({ candidateEmail, candidateName, jobTitle, rejectionReason, shouldArchive, feedbackToken }) {
-        const baseUrl = process.env.API_BASE_URL || 'https://api.s3protection.com';
+        const baseUrl = process.env.API_BASE_URL || 'https://ats.s3protection.com';
         const feedbackUrl = `${baseUrl}/ats/api/ats/rejection-feedback/request/${feedbackToken}`;
 
         // Customize message based on rejection reason
