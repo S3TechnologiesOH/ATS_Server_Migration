@@ -1173,7 +1173,10 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
       const originalUrl = url;
       // Fix api.s3protection.com -> ats.s3protection.com/api
       if (url.includes("api.s3protection.com")) {
-        url = url.replace(/https?:\/\/api\.s3protection\.com\/?/, "https://ats.s3protection.com/api/");
+        url = url.replace(
+          /https?:\/\/api\.s3protection\.com\/?/,
+          "https://ats.s3protection.com/api/"
+        );
       }
       // Fix any double slashes that might occur (except after https:)
       url = url.replace(/([^:])\/+/g, "$1/");
@@ -1339,6 +1342,7 @@ io.on("connection", (socket) => {
 server.listen(port, "0.0.0.0", () => {
   // Keep a single concise startup line (not gated)
   console.log(`Server listening on port ${port}`);
+  console.log("Backend Version: 2025.12.15.1 - Files Sign Route Enabled");
 });
 
 // --- Graceful shutdown ---
