@@ -78,16 +78,16 @@ router.get("/departments", async (req, res) => {
     const email = getPrimaryEmail(req);
     if (isAdmin(req)) {
       const { rows } = await req.db.query(
-        `SELECT department_id, department_name, description, created_at FROM ${DEFAULT_SCHEMA}.departments ORDER BY department_name`
+        `SELECT id, name, description, created_at FROM ${DEFAULT_SCHEMA}.departments ORDER BY name`
       );
       return res.json(rows);
     }
     const { rows } = await req.db.query(
-      `SELECT d.department_id, d.department_name, d.description, d.created_at
+      `SELECT d.id, d.name, d.description, d.created_at
          FROM ${DEFAULT_SCHEMA}.departments d
-         JOIN ${DEFAULT_SCHEMA}.department_members m ON m.department_id = d.department_id
+         JOIN ${DEFAULT_SCHEMA}.department_members m ON m.department_id = d.id
         WHERE m.email = $1
-        ORDER BY d.department_name`,
+        ORDER BY d.name`,
       [email]
     );
     return res.json(rows);
@@ -118,10 +118,10 @@ router.get("/departments/:id/applicants", async (req, res) => {
     const deptId = parseInt(req.params.id, 10);
     // Get department name
     const { rows: deptRows } = await req.db.query(
-      `SELECT department_name FROM ${DEFAULT_SCHEMA}.departments WHERE department_id = $1`,
+      `SELECT name FROM ${DEFAULT_SCHEMA}.departments WHERE id = $1`,
       [deptId]
     );
-    const deptName = deptRows[0]?.department_name || "";
+    const deptName = deptRows[0]?.name || "";
     // Find applications for jobs in that department
     const sql = `
       SELECT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
