@@ -25,8 +25,72 @@ const defaultTitleCase = (str) => {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
+/**
+ * Default implementation of buildCandidateVM
+ * Fetches a candidate by ID and joins with their latest application data
+ */
+async function defaultBuildCandidateVM(db, candidateId) {
+  const { rows } = await db.query(
+    `SELECT
+      p.*,
+      a.${APP_PK} AS application_id,
+      a.resume_url,
+      a.cover_letter_url,
+      a.job_id,
+      a.applied_at,
+      a.status AS application_status,
+      j.title AS job_title,
+      j.location AS job_location
+    FROM ${PEOPLE_TABLE} p
+    LEFT JOIN LATERAL (
+      SELECT * FROM ${APP_TABLE}
+      WHERE candidate_id = p.${PEOPLE_PK}
+      ORDER BY applied_at DESC
+      LIMIT 1
+    ) a ON TRUE
+    LEFT JOIN jobs j ON a.job_id = j.id
+    WHERE p.${PEOPLE_PK} = $1`,
+    [candidateId]
+  );
+  if (!rows || rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    application_id: row.application_id,
+    location: row.location || "",
+    address: row.address || "",
+    city: row.city || "",
+    state: row.state || "",
+    country: row.country || "",
+    linkedin: row.linkedin || "",
+    portfolio: row.portfolio || "",
+    workEligibility: row.work_eligibility || "",
+    willingToRelocate: row.willing_to_relocate || "",
+    desiredSalary: row.desired_salary || "",
+    resumeUrl: row.resume_url || "",
+    coverLetterUrl: row.cover_letter_url || "",
+    status: row.application_status || "new",
+    stage: row.stage || "Screening",
+    source: row.source || "",
+    rating: row.rating || null,
+    notes: row.notes || "",
+    appliedAt: row.applied_at,
+    jobId: row.job_id,
+    jobTitle: row.job_title || "",
+    jobLocation: row.job_location || "",
+    archived: row.archived || false,
+    archivedAt: row.archived_at || null,
+    archivedReason: row.archived_reason || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 // These functions need to be passed in during initialization
-let buildCandidateVM = null;
+let buildCandidateVM = defaultBuildCandidateVM;
 let buildCandidateScoringContext = null;
 let getLatestCandidateScore = null;
 let generateAndStoreCandidateScore = null;
