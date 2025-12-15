@@ -54,6 +54,10 @@ services:
     volumes:
       - ./app:/app/app  # Maps local app directory to container's upload storage path
       - app_uploads:/app/app/uploads  # Persistent volume for uploaded files
+      # Direct code mounts to allow updates without rebuilding image
+      - ./app.js:/app/app.js
+      - ./routes:/app/routes
+      - ./services:/app/services
     restart: unless-stopped
     container_name: ats-backend
     networks:

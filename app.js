@@ -1147,19 +1147,6 @@ async function streamFile(res, absPath, fileName, asAttachment) {
   fs.createReadStream(absPath).pipe(res);
 }
 
-app.get("/files", ensureAuthenticated, async (req, res) => {
-  try {
-    const key = getKeyFromReq(req);
-    if (!key) return res.status(400).json({ error: "key_required" });
-    const abs = safeJoin(FILES_ROOT, key);
-    const name = path.basename(key);
-    await streamFile(res, abs, name, req.query.download === "1");
-  } catch (e) {
-    const code = e.code === "ENOENT" ? 404 : 500;
-    res.status(code).json({ error: "read_failed", detail: e.message });
-  }
-});
-
 // Issue a signed URL (requires current session), useful for converting stored /files URLs to public short-lived links
 // IMPORTANT: This route must come BEFORE /files/* to avoid being caught by the wildcard
 app.get("/files/sign", ensureAuthenticated, async (req, res) => {
@@ -1204,6 +1191,19 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
     res.json({ ok: true, url: signed, key });
   } catch (e) {
     res.status(500).json({ error: "sign_failed", detail: e.message });
+  }
+});
+
+app.get("/files", ensureAuthenticated, async (req, res) => {
+  try {
+    const key = getKeyFromReq(req);
+    if (!key) return res.status(400).json({ error: "key_required" });
+    const abs = safeJoin(FILES_ROOT, key);
+    const name = path.basename(key);
+    await streamFile(res, abs, name, req.query.download === "1");
+  } catch (e) {
+    const code = e.code === "ENOENT" ? 404 : 500;
+    res.status(code).json({ error: "read_failed", detail: e.message });
   }
 });
 
