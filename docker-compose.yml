@@ -60,7 +60,7 @@ services:
       - ./app:/app/app  # Maps local app directory to container's upload storage path
       - app_uploads:/app/app/uploads  # Persistent volume for uploaded files
     restart: unless-stopped
-    container_name: ats-server
+    container_name: ats-backend
     networks:
       - express-network    # Internal network
       - root_default       # Shared external network where Traefik lives
