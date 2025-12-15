@@ -385,8 +385,9 @@ const OIDC_SCOPES = ["openid", "profile", "email"];
 
 function buildAuthUrl(req, res, next) {
   // If already authenticated, redirect directly to success page
+  // Use /api prefix because Traefik strips it - browser needs full path
   if (req.session?.user) {
-    return res.redirect("/auth/success");
+    return res.redirect("/api/auth/success");
   }
 
   const state = crypto.randomBytes(16).toString("hex");
@@ -435,7 +436,8 @@ async function handleAuthRedirect(req, res, next) {
     };
     delete req.session.authState;
     delete req.session.authNonce;
-    res.redirect("/auth/success");
+    // Use /api prefix because Traefik strips it - browser needs full path
+    res.redirect("/api/auth/success");
   } catch (err) {
     next(err);
   }
