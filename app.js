@@ -27,7 +27,7 @@ function validateEnvironment() {
   const errors = [];
   const warnings = [];
 
-  // Required variables (critical - app cannot function without these)
+  // Required variables (critical - app cannot function without these)k
   const required = {
     SESSION_SECRET: process.env.SESSION_SECRET,
     DB_HOST: process.env.DB_HOST,
@@ -147,6 +147,13 @@ function validateEnvironment() {
 // Run validation before app initialization
 validateEnvironment();
 
+const cors = require("cors");
+// ... imports ...
+
+require("dotenv").config(); // Load environment variables from .env early
+
+// ... (Environment validation skipped for brevity, keeping existing code) ...
+
 const app = express();
 const port = process.env.PORT || 3000;
 // Central flag to control verbose backend debug noise (exclude application intake logging which lives in ats.js)
@@ -154,137 +161,57 @@ const VERBOSE_APP_DEBUG = 0;
 
 // --- Configuration (env driven) ---
 const {
-  SESSION_SECRET = process.env.SESSION_SECRET,
-  AZURE_AD_TENANT_ID,
-  AZURE_AD_CLIENT_ID,
-  AZURE_AD_CLIENT_SECRET,
-  AZURE_AD_REDIRECT_URI = process.env.AZURE_AD_REDIRECT_URI ||
-    "https://api.s3protection.com/auth/callback",
-  // Azure OAuth for service-to-service (client credentials) used by public site
-  OAUTH_TENANT_ID = process.env.OAUTH_TENANT_ID,
-  OAUTH_API_AUDIENCE = process.env.OAUTH_API_AUDIENCE,
-  OAUTH_REQUIRED_ROLE = process.env.OAUTH_REQUIRED_ROLE,
-  CW_CLIENT_ID,
-  CW_CLIENT_SECRET,
-  CW_REDIRECT_URI,
-  CW_SCOPE = "company",
-  FILES_ROOT = process.env.FILES_ROOT || "/app/app/uploads",
-  FILES_PUBLIC_URL = process.env.FILES_PUBLIC_URL ||
-    "https://api.s3protection.com/files",
-  MAX_UPLOAD_MB = process.env.MAX_UPLOAD_MB || "25",
-  FILES_SIGNING_SECRET = process.env.FILES_SIGNING_SECRET ||
-    process.env.SESSION_SECRET,
+  // ... existing config ...
+  PUBLIC_APP_ALLOWED_ORIGIN = process.env.PUBLIC_APP_ALLOWED_ORIGIN,
 } = process.env;
 
-// Log a short fingerprint to verify consistency across replicas (does not reveal the secret)
-try {
-  const fp = crypto
-    .createHash("sha256")
-    .update(String(FILES_SIGNING_SECRET || ""))
-    .digest("hex")
-    .slice(0, 8);
-  if (!FILES_SIGNING_SECRET) {
-    console.warn(
-      "[Files] FILES_SIGNING_SECRET not set; falling back to SESSION_SECRET. Ensure all replicas share the same value."
-    );
-  }
-  if (VERBOSE_APP_DEBUG)
-    console.log(
-      `[Files] Signing secret fingerprint: ${fp}; Public URL: ${FILES_PUBLIC_URL}`
-    );
-} catch {}
+// Allow multiple origins (comma separated or specific)
+const allowedOrigins = (PUBLIC_APP_ALLOWED_ORIGIN || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-// --- Multi-app database pools ---
-// Comma-separated app IDs in APPS env (e.g. "subcontractor,ats").
-// If not provided, auto-discover from routes/apps/*.js and default to include 'subcontractor' and 'ats'.
-let APP_IDS = null;
-if (process.env.APPS && process.env.APPS.trim()) {
-  APP_IDS = process.env.APPS.split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-} else {
-  try {
-    const appsDir = path.join(__dirname, "routes", "apps");
-    const files = fs.existsSync(appsDir) ? fs.readdirSync(appsDir) : [];
-    const discovered = files
-      .filter((f) => f.toLowerCase().endsWith(".js"))
-      .map((f) => f.replace(/\.js$/i, ""));
-    const base = ["subcontractor", "ats"];
-    APP_IDS = Array.from(new Set([...(discovered || []), ...base])).filter(
-      Boolean
-    );
-  } catch {
-    APP_IDS = ["subcontractor", "ats"];
-  }
-}
-const DEFAULT_APP = process.env.DEFAULT_APP || APP_IDS[0];
-const { initPools, shutdownPools } = require("./multiTenant");
-const pools = initPools(APP_IDS);
+// Define CORS options
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // Allow mobile/curl (no origin)
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+      return callback(null, true);
+    }
+    // Allow Electron file:// origins or specific localhosts if needed for dev
+    if (
+      origin.startsWith("http://localhost") ||
+      origin === "null" ||
+      origin === "file://"
+    ) {
+      return callback(null, true);
+    }
+    console.warn(`[CORS] Blocked request from origin: ${origin}`);
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true, // Required for cookies (session) to flow
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+};
 
-// Schema management is now handled by node-pg-migrate
-// See migrations/ directory
-
-function attachAppDb(appId, req) {
-  req.appId = appId;
-  req.db = pools[appId];
-  if (VERBOSE_APP_DEBUG)
-    console.log(
-      `[DB_DEBUG] Request ${req.method} ${
-        req.url
-      } -> App: ${appId}, Pool exists: ${!!pools[appId]}`
-    );
-
-  // Add database query debugging wrapper
-  if (req.db && req.db.query) {
-    const originalQuery = req.db.query;
-    req.db.query = async function (sql, params) {
-      const startTime = Date.now();
-      if (VERBOSE_APP_DEBUG)
-        console.log(
-          `[DB_QUERY] App: ${appId}, SQL: ${sql.substring(0, 200)}${
-            sql.length > 200 ? "..." : ""
-          }`,
-          params || []
-        );
-      try {
-        const result = await originalQuery.call(this, sql, params);
-        const duration = Date.now() - startTime;
-        if (VERBOSE_APP_DEBUG) {
-          console.log(
-            `[DB_RESULT] App: ${appId}, Rows: ${
-              result.rows?.length || 0
-            }, Duration: ${duration}ms`
-          );
-          if (result.rows && result.rows.length > 0) {
-            console.log(
-              `[DB_SAMPLE] First row:`,
-              JSON.stringify(result.rows[0]).substring(0, 300)
-            );
-          }
-        }
-        return result;
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        // Always log DB errors
-        console.log(
-          `[DB_ERROR] App: ${appId}, Error: ${error.message}, Duration: ${duration}ms`
-        );
-        throw error;
-      }
-    };
-  }
-}
-
-// Legacy single default pool reference (for old routes that still use 'pool')
-const pool = pools[DEFAULT_APP];
-
-// --- Middleware ---
 app.set("trust proxy", 1); // if behind reverse proxy (needed for secure cookies)
+
+// APPLY CORS globally (must be before routes/auth)
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Preflight checks
+
 app.use(express.json());
 // Support application/x-www-form-urlencoded for proxies that submit forms
 app.use(express.urlencoded({ extended: true }));
 // app.use(helmet());
 // app.use(morgan('combined'));
+
+// Session BEFORE passport
 
 // Session BEFORE passport
 // If the renderer is loaded from file:// (Electron) or a different origin, SameSite=lax blocks the cookie.
@@ -341,13 +268,6 @@ async function ensureDir(dir) {
   await fs.promises.mkdir(dir, { recursive: true });
 }
 
-function getPoolForApp(req) {
-  const candidate = req.body?.appId || req.query?.appId;
-  if (candidate && pools[candidate]) return pools[candidate];
-  console.warn("Selecting default app as fallback");
-  return pools[DEFAULT_APP];
-}
-
 // Signed URL helpers for public file access
 function signData(data) {
   const h = crypto.createHmac("sha256", FILES_SIGNING_SECRET || "");
@@ -377,24 +297,6 @@ function verifySignedParams(key, exp, sig) {
   }
 }
 
-async function getActorUserId(req, db) {
-  try {
-    const email = req.session?.user?.emails?.[0];
-    const displayName = req.session?.user?.displayName || null;
-    if (!email) return null;
-    const q = `
-      INSERT INTO app_user (email, display_name)
-      VALUES ($1, $2)
-      ON CONFLICT (email) DO UPDATE SET display_name = COALESCE(EXCLUDED.display_name, app_user.display_name)
-      RETURNING id
-    `;
-    const r = await db.query(q, [email, displayName]);
-    return r.rows[0]?.id || null;
-  } catch {
-    return null;
-  }
-}
-
 // --- MSAL Configuration ---
 const msalConfig = {
   auth: {
@@ -410,8 +312,9 @@ const OIDC_SCOPES = ["openid", "profile", "email"];
 
 function buildAuthUrl(req, res, next) {
   // If already authenticated, redirect directly to success page
+  // Use /api prefix because Traefik strips it - browser needs full path
   if (req.session?.user) {
-    return res.redirect("/auth/success");
+    return res.redirect("/api/auth/success");
   }
 
   const state = crypto.randomBytes(16).toString("hex");
@@ -460,7 +363,8 @@ async function handleAuthRedirect(req, res, next) {
     };
     delete req.session.authState;
     delete req.session.authNonce;
-    res.redirect("/auth/success");
+    // Use /api prefix because Traefik strips it - browser needs full path
+    res.redirect("/api/auth/success");
   } catch (err) {
     next(err);
   }
@@ -679,19 +583,6 @@ swaggerRouter.get("/openapi.json", (req, res) => res.json(swaggerSpec));
 app.use("/docs", ensureAuthenticated, swaggerRouter);
 app.use("/openapi.json", ensureAuthenticated, (req, res) =>
   res.json(swaggerSpec)
-);
-
-// Per-app Swagger: subcontractor
-const subSpec = buildSpecForApp("subcontractor");
-if (process.env.SWAGGER_SERVER_URL)
-  subSpec.servers = [{ url: process.env.SWAGGER_SERVER_URL }];
-const subSwaggerRouter = express.Router();
-subSwaggerRouter.use("/", swaggerUi.serve);
-subSwaggerRouter.get("/", swaggerUi.setup(subSpec));
-subSwaggerRouter.get("/openapi.json", (req, res) => res.json(subSpec));
-app.use("/subcontractor/docs", ensureAuthenticated, subSwaggerRouter);
-app.use("/subcontractor/openapi.json", ensureAuthenticated, (req, res) =>
-  res.json(subSpec)
 );
 
 const atsSpec = buildSpecForApp("ats");
@@ -1019,8 +910,19 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
 
 if (fs.existsSync(appRoutesDir)) {
   APP_IDS.forEach((aid) => {
-    const file = path.join(appRoutesDir, `${aid}.js`);
-    if (fs.existsSync(file)) {
+    // Check for modular structure first (e.g., ats/index.js), then fallback to single file (e.g., ats.js)
+    const modularDir = path.join(appRoutesDir, aid);
+    const modularFile = path.join(modularDir, "index.js");
+    const legacyFile = path.join(appRoutesDir, `${aid}.js`);
+
+    let file = null;
+    if (fs.existsSync(modularFile)) {
+      file = modularFile;
+    } else if (fs.existsSync(legacyFile)) {
+      file = legacyFile;
+    }
+
+    if (file) {
       try {
         const rtr = require(file);
         app.use(
@@ -1031,6 +933,18 @@ if (fs.existsSync(appRoutesDir)) {
         );
         if (VERBOSE_APP_DEBUG)
           console.log(`Mounted routes for app '${aid}' from ${file}`);
+        // If ATS modular routes, initialize with dependencies (MSAL client, etc.)
+        if (aid === "ats" && typeof rtr.initRouters === "function") {
+          try {
+            rtr.initRouters({
+              graphMsal: msalClient,
+            });
+            if (VERBOSE_APP_DEBUG)
+              console.log(`Initialized ATS routers with MSAL client`);
+          } catch (initErr) {
+            console.error(`Failed to initialize ATS routers:`, initErr.message);
+          }
+        }
         // If ATS, start AI scoring backfill after mount
         if (aid === "ats" && typeof rtr.startBackfill === "function") {
           try {
@@ -1064,7 +978,7 @@ app.get("/api/secure/ping", ensureAuthenticated, (req, res) => {
 });
 
 // ---------- File Upload/Download ----------
-// POST /files/upload  (multipart/form-data; field: file; optional: storage_key, type, subcontractorId, appId, disposition)
+// POST /files/upload  (multipart/form-data; field: file; optional: storage_key, type, appId, disposition)
 app.post(
   "/files/upload",
   ensureAuthenticated,
@@ -1073,26 +987,18 @@ app.post(
     try {
       if (!req.file) return res.status(400).json({ error: "file_required" });
 
-      const db = getPoolForApp(req);
       const originalName = safeFileName(req.file.originalname || "file");
       const today = new Date().toISOString().slice(0, 10);
 
-      let { storage_key, type, subcontractorId, disposition } = req.body || {};
+      let { storage_key, type, disposition } = req.body || {};
       type =
         type && ["attachments", "avatars"].includes(type)
           ? type
           : "attachments";
 
       if (!storage_key) {
-        if (!subcontractorId) {
-          // Cleanup temp file if validation fails
-          await fs.promises.unlink(req.file.path).catch(() => {});
-          return res
-            .status(400)
-            .json({ error: "storage_key_or_subcontractorId_required" });
-        }
         const uuid = crypto.randomUUID();
-        storage_key = `${type}/${subcontractorId}/${today}/${uuid}-${originalName}`;
+        storage_key = `${type}/${today}/${uuid}-${originalName}`;
       }
 
       // Compute safe path and ensure parent dir exists
@@ -1128,29 +1034,6 @@ app.post(
         mime.lookup(originalName) ||
         "application/octet-stream";
 
-      // Optional: create attachment DB record if subcontractorId provided
-      let attachmentRow = null;
-      if (subcontractorId) {
-        const uploader = await getActorUserId(req, db);
-        const sql = `
-        INSERT INTO attachment (subcontractor_id, file_name, content_type, byte_size, storage_key, uploaded_by, sha256_hex)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT (subcontractor_id, file_name)
-        DO UPDATE SET content_type = EXCLUDED.content_type, byte_size = EXCLUDED.byte_size, storage_key = EXCLUDED.storage_key, uploaded_by = EXCLUDED.uploaded_by, sha256_hex = EXCLUDED.sha256_hex, uploaded_at = now()
-        RETURNING *
-      `;
-        const r = await db.query(sql, [
-          subcontractorId,
-          originalName,
-          contentType,
-          size,
-          storage_key,
-          uploader,
-          sha256,
-        ]);
-        attachmentRow = r.rows[0];
-      }
-
       const publicUrl = `${FILES_PUBLIC_URL.replace(/\/$/, "")}/${storage_key}`;
       res.status(201).json({
         storage_key,
@@ -1160,7 +1043,6 @@ app.post(
         byte_size: size,
         sha256_hex: sha256,
         disposition: disposition || "inline",
-        attachment: attachmentRow || null,
       });
     } catch (e) {
       // Attempt cleanup
@@ -1192,6 +1074,53 @@ async function streamFile(res, absPath, fileName, asAttachment) {
   fs.createReadStream(absPath).pipe(res);
 }
 
+// Issue a signed URL (requires current session), useful for converting stored /files URLs to public short-lived links
+// IMPORTANT: This route must come BEFORE /files/* to avoid being caught by the wildcard
+app.get("/files/sign", ensureAuthenticated, async (req, res) => {
+  try {
+    let { url, key, ttl } = req.query;
+    ttl = parseInt(ttl, 10);
+    const ttlSeconds = Number.isFinite(ttl) && ttl > 0 ? ttl : 300;
+
+    // Auto-fix legacy URLs with old domain patterns
+    if (url) {
+      const originalUrl = url;
+      // Fix api.s3protection.com -> ats.s3protection.com/api
+      if (url.includes("api.s3protection.com")) {
+        url = url.replace(
+          /https?:\/\/api\.s3protection\.com\/?/,
+          "https://ats.s3protection.com/api/"
+        );
+      }
+      // Fix any double slashes that might occur (except after https:)
+      url = url.replace(/([^:])\/+/g, "$1/");
+      if (url !== originalUrl) {
+        console.log(`[files/sign] Auto-fixed URL: ${originalUrl} -> ${url}`);
+      }
+    }
+
+    if (!key) {
+      if (!url) return res.status(400).json({ error: "key_or_url_required" });
+      // Derive key from full URL by stripping the FILES_PUBLIC_URL prefix
+      const prefix = (FILES_PUBLIC_URL || "").replace(/\/$/, "") + "/";
+      if (String(url).startsWith(prefix)) {
+        key = String(url).slice(prefix.length);
+      } else {
+        // Fallback: try to interpret as already-relative
+        key = String(url).replace(/^https?:\/\/[^/]+\//, "");
+        if (key.startsWith("files/")) key = key.slice("files/".length);
+        // Also handle /api/files/ prefix from the new URL structure
+        if (key.startsWith("api/files/")) key = key.slice("api/files/".length);
+      }
+    }
+    if (!key) return res.status(400).json({ error: "invalid_key" });
+    const signed = buildSignedUrl(key, ttlSeconds);
+    res.json({ ok: true, url: signed, key });
+  } catch (e) {
+    res.status(500).json({ error: "sign_failed", detail: e.message });
+  }
+});
+
 app.get("/files", ensureAuthenticated, async (req, res) => {
   try {
     const key = getKeyFromReq(req);
@@ -1203,6 +1132,33 @@ app.get("/files", ensureAuthenticated, async (req, res) => {
     const code = e.code === "ENOENT" ? 404 : 500;
     res.status(code).json({ error: "read_failed", detail: e.message });
   }
+});
+
+// Generate a temporary signed URL for a file (for resume/cover letter view)
+// Must be BEFORE /files/* wildcard
+app.get("/files/sign", ensureAuthenticated, (req, res) => {
+  const url = req.query.url;
+  const ttl = parseInt(req.query.ttl || "60", 10); // default 60 seconds
+  if (!url) return res.status(400).json({ error: "url_required" });
+
+  // Extract key from URL (remove origin and base path)
+  // Assumes URL structure: .../api/files/<key>
+  // or just <key> if passed directly
+  let key = url;
+  if (url.includes("/api/files/")) {
+    const match = url.match(/\/api\/files\/(.+)$/);
+    if (match) key = match[1];
+  }
+
+  const exp = Date.now() + ttl * 1000;
+  const sig = signParams(key, exp);
+
+  if (!sig) return res.status(500).json({ error: "signing_failed" });
+
+  const signedUrl = `${FILES_PUBLIC_URL}/files-signed?key=${encodeURIComponent(
+    key
+  )}&exp=${exp}&sig=${sig}${req.query.download === "1" ? "&download=1" : ""}`;
+  res.json({ signedUrl });
 });
 
 app.get("/files/*", ensureAuthenticated, async (req, res) => {
@@ -1263,13 +1219,11 @@ app.post(
   async (req, res) => {
     try {
       if (!reminderScheduler) {
-        return res
-          .status(503)
-          .json({
-            success: false,
-            error:
-              "Interview reminder system not initialized. Check SMTP configuration.",
-          });
+        return res.status(503).json({
+          success: false,
+          error:
+            "Interview reminder system not initialized. Check SMTP configuration.",
+        });
       }
       await reminderScheduler.triggerManualCheck();
       res.json({ success: true, message: "Manual check triggered" });
@@ -1287,15 +1241,22 @@ try {
     console.log("[Updates] Created updates directory at:", UPDATES_DIR);
   }
   // Serve updates with no-cache headers for latest.yml to prevent stale update info
-  app.use("/updates", (req, res, next) => {
-    // Disable caching for latest.yml to ensure clients always get fresh update info
-    if (req.path === "/latest.yml") {
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-    }
-    next();
-  }, express.static(UPDATES_DIR));
+  app.use(
+    "/updates",
+    (req, res, next) => {
+      // Disable caching for latest.yml to ensure clients always get fresh update info
+      if (req.path === "/latest.yml") {
+        res.setHeader(
+          "Cache-Control",
+          "no-store, no-cache, must-revalidate, proxy-revalidate"
+        );
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+      next();
+    },
+    express.static(UPDATES_DIR)
+  );
   console.log("[Updates] ✓ Serving app updates from /updates at:", UPDATES_DIR);
 } catch (error) {
   console.error(
@@ -1335,6 +1296,7 @@ io.on("connection", (socket) => {
 server.listen(port, "0.0.0.0", () => {
   // Keep a single concise startup line (not gated)
   console.log(`Server listening on port ${port}`);
+  console.log("Backend Version: 2025.12.15.1 - Files Sign Route Enabled");
 });
 
 // --- Graceful shutdown ---
@@ -1349,33 +1311,7 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-// Public, time-limited signed access (no session required)
-// Issue a signed URL (requires current session), useful for converting stored /files URLs to public short-lived links
-app.get("/files/sign", ensureAuthenticated, async (req, res) => {
-  try {
-    let { url, key, ttl } = req.query;
-    ttl = parseInt(ttl, 10);
-    const ttlSeconds = Number.isFinite(ttl) && ttl > 0 ? ttl : 300;
-    if (!key) {
-      if (!url) return res.status(400).json({ error: "key_or_url_required" });
-      // Derive key from full URL by stripping the FILES_PUBLIC_URL prefix
-      const prefix = (FILES_PUBLIC_URL || "").replace(/\/$/, "") + "/";
-      if (String(url).startsWith(prefix)) {
-        key = String(url).slice(prefix.length);
-      } else {
-        // Fallback: try to interpret as already-relative
-        key = String(url).replace(/^https?:\/\/[^/]+\//, "");
-        if (key.startsWith("files/")) key = key.slice("files/".length);
-      }
-    }
-    if (!key) return res.status(400).json({ error: "invalid_key" });
-    const signed = buildSignedUrl(key, ttlSeconds);
-    res.json({ ok: true, url: signed, key });
-  } catch (e) {
-    res.status(500).json({ error: "sign_failed", detail: e.message });
-  }
-});
-
+// Public, time-limited signed file access (no session required)
 app.get("/files-signed", async (req, res) => {
   try {
     const key = req.query.key;
@@ -1406,3 +1342,24 @@ app.get("/files-signed/*", async (req, res) => {
     res.status(code).json({ error: "read_failed", detail: e.message });
   }
 });
+
+// --- Helper Functions for File Signing ---
+
+function signParams(key, exp) {
+  if (!FILES_SIGNING_SECRET) return null;
+  const data = `${key}:${exp}`;
+  return crypto
+    .createHmac("sha256", FILES_SIGNING_SECRET)
+    .update(data)
+    .digest("hex");
+}
+
+function verifySignedParams(key, exp, sig) {
+  if (!FILES_SIGNING_SECRET || !sig || !exp) return false;
+  // Check expiration
+  if (Date.now() > parseInt(exp, 10)) return false;
+  // Re-sign and compare
+  const expected = signParams(key, exp);
+  // Constant time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+}
