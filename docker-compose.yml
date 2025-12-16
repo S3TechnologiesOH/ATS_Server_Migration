@@ -55,9 +55,10 @@ services:
       # - ./app:/app/app  # Maps local app directory to container's upload storage path
       - ats-server_app_uploads:/app/app/uploads  # Use existing volume with uploaded files
       # Direct code mounts to allow updates without rebuilding image
-      - ./app.js:/app/app.js
-      - ./routes:/app/routes
-      - ./services:/app/services
+      # NOTE: Only enable these if running docker-compose locally with the source files
+      # - ./app.js:/app/app.js
+      # - ./routes:/app/routes
+      # - ./services:/app/services
     restart: unless-stopped
     container_name: ats-backend
     networks:
