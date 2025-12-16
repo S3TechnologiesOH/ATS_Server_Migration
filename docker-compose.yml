@@ -53,11 +53,11 @@ services:
       - CROSS_SITE_SESSION=1
     volumes:
       # - ./app:/app/app  # Maps local app directory to container's upload storage path
-      - app_uploads:/app/app/uploads  # Persistent volume for uploaded files
+      - ats-server_app_uploads:/app/app/uploads  # Use existing volume with uploaded files
       # Direct code mounts to allow updates without rebuilding image
-      # - ./app.js:/app/app.js
-      # - ./routes:/app/routes
-      # - ./services:/app/services
+      - ./app.js:/app/app.js
+      - ./routes:/app/routes
+      - ./services:/app/services
     restart: unless-stopped
     container_name: ats-backend
     networks:
@@ -88,4 +88,5 @@ networks:
     external: true
 
 volumes:
-  app_uploads:  # Persistent volume for file uploads
+  ats-server_app_uploads:
+    external: true  # Use existing volume from old ats-server container
