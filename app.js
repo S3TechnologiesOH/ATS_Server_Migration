@@ -555,6 +555,20 @@ function ensureAuthenticated(req, res, next) {
     /^\/applications\/\d+\/attachments(\/upload)?\/?$/.test(req.path);
   const isResumeCoverUpload =
     /^\/applications\/\d+\/upload\/(resume|cover-letter)\/?$/.test(req.path);
+
+  // Debug logging for upload endpoints
+  if (isResumeCoverUpload || isAttachmentsPost) {
+    console.log("[AUTH_DEBUG] Upload endpoint hit:", {
+      path: req.path,
+      method: req.method,
+      isAts,
+      hasSession: !!req.session,
+      hasUser: !!(req.session && req.session.user),
+      hasCookie: !!req.headers.cookie,
+      contentType: req.headers["content-type"],
+    });
+  }
+
   if (
     isAts &&
     isPost &&
@@ -594,7 +608,7 @@ function ensureAuthenticated(req, res, next) {
           return res.status(code).json(payload);
         });
     }
-    // No bearer token supplied.
+    // No bearer token supplied - fall through to session auth for uploads
     if (isAppsSubmit) {
       if (process.env.REQUIRE_BEARER_FOR_PUBLIC_APPLY === "1") {
         if (process.env.AUTH_DEBUG === "1")
@@ -609,6 +623,7 @@ function ensureAuthenticated(req, res, next) {
         );
       return next();
     }
+    // For resume/cover uploads without bearer, allow session auth to handle it below
   }
 
   // Fallback to session-based auth
@@ -1358,17 +1373,35 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
     const ttlSeconds = Number.isFinite(ttl) && ttl > 0 ? ttl : 300;
     if (!key) {
       if (!url) return res.status(400).json({ error: "key_or_url_required" });
-      // Derive key from full URL by stripping the FILES_PUBLIC_URL prefix
+      // Derive key from full URL by stripping any known public URL prefix
       const prefix = (FILES_PUBLIC_URL || "").replace(/\/$/, "") + "/";
       if (String(url).startsWith(prefix)) {
         key = String(url).slice(prefix.length);
       } else {
-        // Fallback: try to interpret as already-relative
-        key = String(url).replace(/^https?:\/\/[^/]+\//, "");
-        if (key.startsWith("files/")) key = key.slice("files/".length);
+        // Fallback: strip origin and extract path after /files/ or /api/files/
+        // Handles URLs like https://ats.s3protection.com/api/files/ats/applications/...
+        const urlPath = String(url).replace(/^https?:\/\/[^/]+/, "");
+        // Match /files/... or /api/files/... and extract the storage key
+        const filesMatch = urlPath.match(/(?:\/api)?\/files\/(.+)$/);
+        if (filesMatch && filesMatch[1]) {
+          key = filesMatch[1];
+        } else {
+          // Last resort: use path without leading slash
+          key = urlPath.replace(/^\/+/, "");
+        }
       }
     }
-    if (!key) return res.status(400).json({ error: "invalid_key" });
+    if (!key || key === "sign") return res.status(400).json({ error: "invalid_key" });
+    // Verify the file exists before signing
+    try {
+      const absPath = safeJoin(FILES_ROOT, key);
+      await fs.promises.stat(absPath);
+    } catch (e) {
+      if (e.code === "ENOENT") {
+        return res.status(404).json({ error: "file_not_found", key });
+      }
+      throw e;
+    }
     const signed = buildSignedUrl(key, ttlSeconds);
     res.json({ ok: true, url: signed, key });
   } catch (e) {
