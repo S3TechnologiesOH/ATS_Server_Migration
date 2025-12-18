@@ -12,9 +12,6 @@ const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const ExcelJS = require("exceljs");
 
-// Centralized configuration
-const config = require("../../../config");
-
 // --- JSON Repair (optional dependency) ---
 let jsonrepairFn = null;
 try {
@@ -25,16 +22,17 @@ try {
 } catch {}
 
 // --- OpenAI Client ---
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 let _openaiClient = null;
 
 function getOpenAIClient() {
-  if (!config.ai.openaiApiKey) {
+  if (!OPENAI_API_KEY) {
     throw new Error("openai_not_configured");
   }
   if (!_openaiClient) {
     try {
       const OpenAI = require("openai");
-      _openaiClient = new OpenAI({ apiKey: config.ai.openaiApiKey });
+      _openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
     } catch (e) {
       throw new Error("openai_sdk_not_installed");
     }
@@ -43,25 +41,28 @@ function getOpenAIClient() {
 }
 
 // --- Database Schema Constants ---
-const DEFAULT_SCHEMA = config.db.schema;
+const DEFAULT_SCHEMA = process.env.DB_SCHEMA || "public";
 const qualify = (name) =>
   name.includes(".") ? name : `${DEFAULT_SCHEMA}.${name}`;
 
-const PEOPLE_TABLE_NAME = config.atsTables.peopleTable;
+const PEOPLE_TABLE_NAME = process.env.ATS_PEOPLE_TABLE || "candidates";
 const PEOPLE_TABLE = qualify(PEOPLE_TABLE_NAME);
-const PEOPLE_PK = config.atsTables.peoplePk;
+const PEOPLE_PK = process.env.ATS_PEOPLE_PK || "candidate_id";
 
-const APP_TABLE_NAME = config.atsTables.applicationsTable;
+const APP_TABLE_NAME = process.env.ATS_APPLICATIONS_TABLE || "applications";
 const APP_TABLE = qualify(APP_TABLE_NAME);
-const APP_PK = config.atsTables.applicationsPk;
+const APP_PK = process.env.ATS_APPLICATIONS_PK || "application_id";
 
-const ATS_ATTACHMENTS_TABLE = config.atsTables.attachmentsTable;
+const ATS_ATTACHMENTS_TABLE =
+  process.env.ATS_ATTACHMENTS_TABLE || "application_attachment";
 
 // --- File Storage Config ---
-const FILES_ROOT = config.files.root;
-const FILES_PUBLIC_URL = config.files.publicUrl;
-const MAX_UPLOAD_MB = config.files.maxUploadMb;
-const MAX_UPLOAD_BYTES = Math.max(1, MAX_UPLOAD_MB) * 1024 * 1024;
+const FILES_ROOT = process.env.FILES_ROOT || "/app/app/uploads";
+const FILES_PUBLIC_URL =
+  process.env.FILES_PUBLIC_URL || "https://ats.s3protection.com/api/files";
+const MAX_UPLOAD_MB = process.env.MAX_UPLOAD_MB || "512";
+const MAX_UPLOAD_BYTES =
+  Math.max(1, parseInt(MAX_UPLOAD_MB, 10) || 512) * 1024 * 1024;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -69,7 +70,13 @@ const upload = multer({
 });
 
 // --- Admin Config ---
-const ADMIN_EMAILS = config.admin.emails;
+const ADMIN_EMAILS = (
+  process.env.ADMIN_EMAILS ||
+  "catwell@mys3tech.com,jlowry@mys3tech.com,nlarker@mys3tech.com"
+)
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 
 // --- File Helpers ---
 function ensureDir(dir) {
