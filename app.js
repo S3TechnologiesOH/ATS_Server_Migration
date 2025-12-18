@@ -1047,6 +1047,10 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
   if (req.path.startsWith("/public/")) {
     return next();
   }
+  // Allow health checks without auth (needed for URL discovery in frontend)
+  if (req.path === "/health" || req.path === "/health/db") {
+    return next();
+  }
   return ensureAuthenticated(req, res, next);
 }
 
