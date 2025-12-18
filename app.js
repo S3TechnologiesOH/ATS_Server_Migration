@@ -16,7 +16,24 @@ const swaggerUi = require("swagger-ui-express");
 const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { buildSpec, buildSpecForApp } = require("./swagger");
-const scoringService = require("./services/scoringService");
+
+// Scoring service - load with fallback to prevent app crash
+let scoringService = null;
+try {
+  scoringService = require("./services/scoringService");
+  console.log("[App] Scoring service loaded successfully");
+} catch (err) {
+  console.error("[App] Failed to load scoring service:", err.message, err.stack);
+  // Provide stub functions to prevent crashes
+  scoringService = {
+    buildCandidateVM: async () => null,
+    buildCandidateScoringContext: async () => null,
+    getLatestCandidateScore: async () => null,
+    generateAndStoreCandidateScore: async () => { throw new Error("Scoring service not available"); },
+    enqueueCandidateScore: () => {},
+  };
+}
+
 // Optional hardening (uncomment if installed):
 // const helmet = require('helmet');
 // const morgan = require('morgan');
