@@ -1035,9 +1035,11 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
 if (fs.existsSync(appRoutesDir)) {
   APP_IDS.forEach((aid) => {
     const file = path.join(appRoutesDir, `${aid}.js`);
-    if (fs.existsSync(file)) {
+    const dir = path.join(appRoutesDir, aid); // Also check for directory with index.js
+    const routePath = fs.existsSync(file) ? file : (fs.existsSync(dir) ? dir : null);
+    if (routePath) {
       try {
-        const rtr = require(file);
+        const rtr = require(routePath);
         app.use(
           `/${aid}/api/${aid}`,
           resolveApp,
@@ -1045,12 +1047,27 @@ if (fs.existsSync(appRoutesDir)) {
           rtr
         );
         if (VERBOSE_APP_DEBUG)
-          console.log(`Mounted routes for app '${aid}' from ${file}`);
-        // If ATS, start AI scoring backfill after mount
-        if (aid === "ats" && typeof rtr.startBackfill === "function") {
-          try {
-            rtr.startBackfill(aid, pools[aid]);
-          } catch {}
+          console.log(`Mounted routes for app '${aid}' from ${routePath}`);
+        // If ATS, initialize routers with dependencies and start AI scoring backfill
+        if (aid === "ats") {
+          // Initialize routers with graphMsal for Microsoft Graph integration
+          if (typeof rtr.initRouters === "function") {
+            try {
+              rtr.initRouters({
+                graphMsal: msalClient, // Reuse the MSAL client for Graph API
+              });
+              if (VERBOSE_APP_DEBUG)
+                console.log(`Initialized ATS routers with graphMsal`);
+            } catch (initErr) {
+              console.error(`Failed to initialize ATS routers:`, initErr.message);
+            }
+          }
+          // Start AI scoring backfill after mount
+          if (typeof rtr.startBackfill === "function") {
+            try {
+              rtr.startBackfill(aid, pools[aid]);
+            } catch {}
+          }
         }
       } catch (e) {
         console.error(`Failed mounting routes for app '${aid}':`, e.message);
