@@ -16,6 +16,7 @@ const swaggerUi = require("swagger-ui-express");
 const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { buildSpec, buildSpecForApp } = require("./swagger");
+const scoringService = require("./services/scoringService");
 // Optional hardening (uncomment if installed):
 // const helmet = require('helmet');
 // const morgan = require('morgan');
@@ -1050,14 +1051,20 @@ if (fs.existsSync(appRoutesDir)) {
           console.log(`Mounted routes for app '${aid}' from ${routePath}`);
         // If ATS, initialize routers with dependencies and start AI scoring backfill
         if (aid === "ats") {
-          // Initialize routers with graphMsal for Microsoft Graph integration
+          // Initialize routers with graphMsal and scoring functions
           if (typeof rtr.initRouters === "function") {
             try {
               rtr.initRouters({
                 graphMsal: msalClient, // Reuse the MSAL client for Graph API
+                // Scoring service functions
+                buildCandidateVM: scoringService.buildCandidateVM,
+                buildCandidateScoringContext: scoringService.buildCandidateScoringContext,
+                getLatestCandidateScore: scoringService.getLatestCandidateScore,
+                generateAndStoreCandidateScore: scoringService.generateAndStoreCandidateScore,
+                enqueueCandidateScore: scoringService.enqueueCandidateScore,
               });
               if (VERBOSE_APP_DEBUG)
-                console.log(`Initialized ATS routers with graphMsal`);
+                console.log(`Initialized ATS routers with graphMsal and scoring functions`);
             } catch (initErr) {
               console.error(`Failed to initialize ATS routers:`, initErr.message);
             }
