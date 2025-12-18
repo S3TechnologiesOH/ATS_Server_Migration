@@ -159,7 +159,7 @@ const {
   AZURE_AD_CLIENT_ID,
   AZURE_AD_CLIENT_SECRET,
   AZURE_AD_REDIRECT_URI = process.env.AZURE_AD_REDIRECT_URI ||
-    "https://api.s3protection.com/auth/callback",
+    "https://ats.s3protection.com/api/auth/callback",
   // Azure OAuth for service-to-service (client credentials) used by public site
   OAUTH_TENANT_ID = process.env.OAUTH_TENANT_ID,
   OAUTH_API_AUDIENCE = process.env.OAUTH_API_AUDIENCE,
@@ -170,7 +170,7 @@ const {
   CW_SCOPE = "company",
   FILES_ROOT = process.env.FILES_ROOT || "/app/app/uploads",
   FILES_PUBLIC_URL = process.env.FILES_PUBLIC_URL ||
-    "https://api.s3protection.com/files",
+    "https://ats.s3protection.com/api/files",
   MAX_UPLOAD_MB = process.env.MAX_UPLOAD_MB || "25",
   FILES_SIGNING_SECRET = process.env.FILES_SIGNING_SECRET ||
     process.env.SESSION_SECRET,
