@@ -9,6 +9,9 @@ const crypto = require("crypto");
 const axios = require("axios");
 const router = express.Router();
 
+// Centralized configuration
+const config = require("../../../config");
+
 // MSAL configuration - will be initialized if env vars are present
 let graphMsal = null;
 const GRAPH_SCOPES = [
@@ -22,9 +25,8 @@ const GRAPH_SCOPES = [
   "People.Read",
 ];
 
-// Graph redirect URI - configured via env
-const GRAPH_REDIRECT_URI = process.env.GRAPH_REDIRECT_URI ||
-  "https://ats.s3protection.com/api/ats/api/ats/graph/callback";
+// Graph redirect URI - from centralized config
+const GRAPH_REDIRECT_URI = config.graph.redirectUri;
 
 /**
  * Initialize the graph router with MSAL client
