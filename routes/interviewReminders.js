@@ -285,17 +285,6 @@ function initializeRoutes(pools) {
 
             const reminder = findResult.rows[0];
 
-            // Check if already responded
-            if (reminder.response_status !== 'pending') {
-                return res.send(generateResponsePage({
-                    status: 'info',
-                    title: 'Already Responded',
-                    message: `You have already ${reminder.response_status} this interview on ${new Date(reminder.response_at).toLocaleString()}.`,
-                    icon: 'ℹ️',
-                    meetingDetails: reminder
-                }));
-            }
-
             // If no reason provided, show form
             if (!reason) {
                 return res.send(generateCancellationForm(token, reminder));
@@ -396,17 +385,6 @@ function initializeRoutes(pools) {
             }
 
             const reminder = findResult.rows[0];
-
-            // Check if already responded
-            if (reminder.response_status !== 'pending') {
-                return res.send(generateResponsePage({
-                    status: 'info',
-                    title: 'Already Responded',
-                    message: `You have already ${reminder.response_status} this interview on ${new Date(reminder.response_at).toLocaleString()}.`,
-                    icon: 'ℹ️',
-                    meetingDetails: reminder
-                }));
-            }
 
             // If no reason provided, show form
             if (!reason) {
