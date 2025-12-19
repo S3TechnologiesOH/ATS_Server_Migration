@@ -16,24 +16,6 @@ const swaggerUi = require("swagger-ui-express");
 const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { buildSpec, buildSpecForApp } = require("./swagger");
-
-// Scoring service - load with fallback to prevent app crash
-let scoringService = null;
-try {
-  scoringService = require("./services/scoringService");
-  console.log("[App] Scoring service loaded successfully");
-} catch (err) {
-  console.error("[App] Failed to load scoring service:", err.message, err.stack);
-  // Provide stub functions to prevent crashes
-  scoringService = {
-    buildCandidateVM: async () => null,
-    buildCandidateScoringContext: async () => null,
-    getLatestCandidateScore: async () => null,
-    generateAndStoreCandidateScore: async () => { throw new Error("Scoring service not available"); },
-    enqueueCandidateScore: () => {},
-  };
-}
-
 // Optional hardening (uncomment if installed):
 // const helmet = require('helmet');
 // const morgan = require('morgan');
@@ -565,13 +547,6 @@ function ensureAuthenticated(req, res, next) {
       console.log("[AUTH_DEBUG] Public jobs access", { path: req.path });
     return next();
   }
-  // Allow unauthenticated access to interview reminder action endpoints (confirm/cancel/reschedule)
-  // These are token-based one-time action links sent via email
-  if (/^\/api\/interview-reminders\/(confirm|cancel|reschedule|status)\/[a-f0-9]+\/?$/.test(req.path)) {
-    if (process.env.AUTH_DEBUG === "1")
-      console.log("[AUTH_DEBUG] Interview reminder action bypass", { path: req.path });
-    return next();
-  }
   // Allow ATS client-credential Bearer tokens for specific POST endpoints
   const isAts = req.appId === "ats";
   const isPost = req.method === "POST";
@@ -1054,10 +1029,6 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
   if (req.path.startsWith("/public/")) {
     return next();
   }
-  // Allow health checks without auth (needed for URL discovery in frontend)
-  if (req.path === "/health" || req.path === "/health/db") {
-    return next();
-  }
   return ensureAuthenticated(req, res, next);
 }
 
@@ -1079,20 +1050,14 @@ if (fs.existsSync(appRoutesDir)) {
           console.log(`Mounted routes for app '${aid}' from ${routePath}`);
         // If ATS, initialize routers with dependencies and start AI scoring backfill
         if (aid === "ats") {
-          // Initialize routers with graphMsal and scoring functions
+          // Initialize routers with graphMsal for Microsoft Graph integration
           if (typeof rtr.initRouters === "function") {
             try {
               rtr.initRouters({
                 graphMsal: msalClient, // Reuse the MSAL client for Graph API
-                // Scoring service functions
-                buildCandidateVM: scoringService.buildCandidateVM,
-                buildCandidateScoringContext: scoringService.buildCandidateScoringContext,
-                getLatestCandidateScore: scoringService.getLatestCandidateScore,
-                generateAndStoreCandidateScore: scoringService.generateAndStoreCandidateScore,
-                enqueueCandidateScore: scoringService.enqueueCandidateScore,
               });
               if (VERBOSE_APP_DEBUG)
-                console.log(`Initialized ATS routers with graphMsal and scoring functions`);
+                console.log(`Initialized ATS routers with graphMsal`);
             } catch (initErr) {
               console.error(`Failed to initialize ATS routers:`, initErr.message);
             }
