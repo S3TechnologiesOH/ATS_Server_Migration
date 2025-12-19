@@ -16,6 +16,7 @@ const swaggerUi = require("swagger-ui-express");
 const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { buildSpec, buildSpecForApp } = require("./swagger");
+
 // Optional hardening (uncomment if installed):
 // const helmet = require('helmet');
 // const morgan = require('morgan');
@@ -547,6 +548,13 @@ function ensureAuthenticated(req, res, next) {
       console.log("[AUTH_DEBUG] Public jobs access", { path: req.path });
     return next();
   }
+  // Allow unauthenticated access to interview reminder action endpoints (confirm/cancel/reschedule)
+  // These are token-based one-time action links sent via email (Traefik strips /api prefix)
+  if (/^\/interview-reminders\/(confirm|cancel|reschedule|status)\/[a-f0-9]+\/?$/.test(req.path)) {
+    if (process.env.AUTH_DEBUG === "1")
+      console.log("[AUTH_DEBUG] Interview reminder action bypass", { path: req.path });
+    return next();
+  }
   // Allow ATS client-credential Bearer tokens for specific POST endpoints
   const isAts = req.appId === "ats";
   const isPost = req.method === "POST";
@@ -1029,6 +1037,10 @@ function ensureAuthenticatedExceptPublic(req, res, next) {
   if (req.path.startsWith("/public/")) {
     return next();
   }
+  // Allow health checks without auth (needed for URL discovery in frontend)
+  if (req.path === "/health" || req.path === "/health/db") {
+    return next();
+  }
   return ensureAuthenticated(req, res, next);
 }
 
@@ -1050,7 +1062,7 @@ if (fs.existsSync(appRoutesDir)) {
           console.log(`Mounted routes for app '${aid}' from ${routePath}`);
         // If ATS, initialize routers with dependencies and start AI scoring backfill
         if (aid === "ats") {
-          // Initialize routers with graphMsal for Microsoft Graph integration
+          // Initialize routers with graphMsal
           if (typeof rtr.initRouters === "function") {
             try {
               rtr.initRouters({
@@ -1061,12 +1073,6 @@ if (fs.existsSync(appRoutesDir)) {
             } catch (initErr) {
               console.error(`Failed to initialize ATS routers:`, initErr.message);
             }
-          }
-          // Start AI scoring backfill after mount
-          if (typeof rtr.startBackfill === "function") {
-            try {
-              rtr.startBackfill(aid, pools[aid]);
-            } catch {}
           }
         }
       } catch (e) {
@@ -1255,9 +1261,10 @@ try {
   const interviewRemindersRouter = require("./routes/interviewReminders")(
     pools
   );
-  app.use("/api/interview-reminders", interviewRemindersRouter);
+  // Register without /api prefix since Traefik strips it (see docker-compose.yml line 76)
+  app.use("/interview-reminders", interviewRemindersRouter);
   console.log(
-    "[InterviewReminder] ✓ Routes registered at /api/interview-reminders"
+    "[InterviewReminder] ✓ Routes registered at /interview-reminders (Traefik adds /api)"
   );
 } catch (error) {
   console.error("[InterviewReminder] ✗ Failed to load routes:", error.message);
@@ -1288,9 +1295,9 @@ try {
   console.log("[InterviewReminder] Interview reminders will be disabled");
 }
 
-// Optional: Manual trigger endpoint for testing/debugging
+// Optional: Manual trigger endpoint for testing/debugging (Traefik strips /api)
 app.post(
-  "/api/interview-reminders/trigger",
+  "/interview-reminders/trigger",
   ensureAuthenticated,
   async (req, res) => {
     try {
