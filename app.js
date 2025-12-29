@@ -495,7 +495,16 @@ async function handleAuthRedirect(req, res, next) {
     if (dbManager.isInitialized()) {
       const userEmail = user.emails[0] || idTokenClaims.preferred_username;
       const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
-      await setTenantInSession(req, userEmail, microsoftOid);
+      console.log('[Auth] Azure AD emails:', user.emails);
+      console.log('[Auth] preferred_username:', idTokenClaims.preferred_username);
+      console.log('[Auth] Using email for tenant lookup:', userEmail);
+      const tenantResult = await setTenantInSession(req, userEmail, microsoftOid);
+      console.log('[Auth] setTenantInSession returned:', tenantResult);
+      console.log('[Auth] session.user after setTenantInSession:', {
+        tenantId: req.session.user?.tenantId,
+        tenantName: req.session.user?.tenantName,
+        tenantRole: req.session.user?.tenantRole,
+      });
     }
 
     res.redirect("/auth/success");
@@ -1009,6 +1018,12 @@ app.post("/auth/logout", (req, res) => {
  */
 app.get("/api/user", ensureAuthenticated, (req, res) => {
   const { user } = req.session;
+  console.log('[/api/user] session.user tenant fields:', {
+    tenantId: user?.tenantId,
+    tenantName: user?.tenantName,
+    tenantSubdomain: user?.tenantSubdomain,
+    tenantRole: user?.tenantRole,
+  });
   const response = {
     app: DEFAULT_APP,
     id: user.id,
@@ -1024,6 +1039,7 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
       role: user.tenantRole,
     };
   }
+  console.log('[/api/user] returning:', response);
   res.json(response);
 });
 

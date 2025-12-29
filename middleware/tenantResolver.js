@@ -21,14 +21,20 @@ const dbManager = require('../dbManager');
  * Returns tenant info or null if user has no tenant access
  */
 async function lookupUserTenant(email, microsoftOid = null) {
+  console.log('[TenantResolver] lookupUserTenant called with email:', email, 'oid:', microsoftOid);
+
   if (!dbManager.isInitialized()) {
+    console.log('[TenantResolver] dbManager not initialized');
     return null;
   }
 
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) {
+    console.log('[TenantResolver] No email provided');
     return null;
   }
+
+  console.log('[TenantResolver] Looking up normalized email:', normalized);
 
   try {
     // Find user's tenant membership
@@ -49,6 +55,7 @@ async function lookupUserTenant(email, microsoftOid = null) {
 
     // Fall back to email lookup
     if (!result || result.rows.length === 0) {
+      console.log('[TenantResolver] OID lookup returned no results, trying email lookup');
       result = await dbManager.getMasterDb().query(
         `SELECT tu.tenant_id, tu.role, tu.first_name, tu.last_name,
                 t.id, t.company_name, t.subdomain, t.db_name, t.is_active
@@ -58,13 +65,16 @@ async function lookupUserTenant(email, microsoftOid = null) {
          LIMIT 1`,
         [normalized]
       );
+      console.log('[TenantResolver] Email lookup result rows:', result.rows.length);
     }
 
     if (result.rows.length === 0) {
+      console.log('[TenantResolver] No tenant found for email:', normalized);
       return null;
     }
 
     const row = result.rows[0];
+    console.log('[TenantResolver] Found tenant:', row.company_name, 'role:', row.role);
     return {
       tenantId: row.tenant_id,
       tenantRole: row.role,
@@ -139,7 +149,11 @@ async function resolveTenantFromSession(req, res, next) {
  * Call this after user logs in successfully
  */
 async function setTenantInSession(req, email, microsoftOid = null) {
+  console.log('[TenantResolver] setTenantInSession called for email:', email);
   const tenantInfo = await lookupUserTenant(email, microsoftOid);
+
+  console.log('[TenantResolver] tenantInfo:', tenantInfo);
+  console.log('[TenantResolver] session.user exists:', !!req.session?.user);
 
   if (tenantInfo && req.session?.user) {
     req.session.user.tenantId = tenantInfo.tenantId;
@@ -147,12 +161,19 @@ async function setTenantInSession(req, email, microsoftOid = null) {
     req.session.user.tenantRole = tenantInfo.tenantRole;
     req.session.user.tenantName = tenantInfo.tenantName;
 
+    console.log('[TenantResolver] Set tenant in session:', {
+      tenantId: tenantInfo.tenantId,
+      tenantName: tenantInfo.tenantName,
+      tenantRole: tenantInfo.tenantRole,
+    });
+
     // Update last login
     dbManager.updateLastLogin(tenantInfo.tenantId, email).catch(() => {});
 
     return tenantInfo;
   }
 
+  console.log('[TenantResolver] Did NOT set tenant in session. tenantInfo:', !!tenantInfo, 'session.user:', !!req.session?.user);
   return null;
 }
 
