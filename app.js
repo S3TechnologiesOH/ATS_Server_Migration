@@ -1027,6 +1027,111 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
   res.json(response);
 });
 
+/**
+ * @openapi
+ * /api/tenant/branding:
+ *   get:
+ *     summary: Get tenant branding colors
+ *     security:
+ *       - SessionCookie: []
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: No tenant access }
+ */
+app.get("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
+  const { user } = req.session;
+  if (!user?.tenantId) {
+    return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
+  }
+
+  try {
+    const result = await dbManager.getMasterDb().query(
+      `SELECT primary_color, secondary_color FROM tenants WHERE id = $1`,
+      [user.tenantId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "tenant_not_found" });
+    }
+
+    res.json({
+      primary_color: result.rows[0].primary_color || "#2d5a27",
+      secondary_color: result.rows[0].secondary_color || "#333333",
+    });
+  } catch (err) {
+    console.error("[Branding] Error fetching branding:", err.message);
+    res.status(500).json({ error: "server_error", message: err.message });
+  }
+});
+
+/**
+ * @openapi
+ * /api/tenant/branding:
+ *   put:
+ *     summary: Update tenant branding colors
+ *     security:
+ *       - SessionCookie: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               primary_color: { type: string }
+ *               secondary_color: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Not tenant admin }
+ */
+app.put("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
+  const { user } = req.session;
+  if (!user?.tenantId) {
+    return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
+  }
+
+  // Only tenant admins can update branding
+  if (user.tenantRole !== "admin") {
+    return res.status(403).json({ error: "forbidden", message: "Only tenant administrators can update branding" });
+  }
+
+  const { primary_color, secondary_color } = req.body;
+
+  // Validate hex color format
+  const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
+  if (primary_color && !hexColorRegex.test(primary_color)) {
+    return res.status(400).json({ error: "invalid_color", message: "Primary color must be a valid hex color (e.g., #2d5a27)" });
+  }
+  if (secondary_color && !hexColorRegex.test(secondary_color)) {
+    return res.status(400).json({ error: "invalid_color", message: "Secondary color must be a valid hex color (e.g., #333333)" });
+  }
+
+  try {
+    const result = await dbManager.getMasterDb().query(
+      `UPDATE tenants SET
+        primary_color = COALESCE($2, primary_color),
+        secondary_color = COALESCE($3, secondary_color),
+        updated_at = NOW()
+       WHERE id = $1
+       RETURNING primary_color, secondary_color`,
+      [user.tenantId, primary_color, secondary_color]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "tenant_not_found" });
+    }
+
+    res.json({
+      success: true,
+      primary_color: result.rows[0].primary_color,
+      secondary_color: result.rows[0].secondary_color,
+    });
+  } catch (err) {
+    console.error("[Branding] Error updating branding:", err.message);
+    res.status(500).json({ error: "server_error", message: err.message });
+  }
+});
+
 // Multi-app API router
 const multiApi = express.Router({ mergeParams: true });
 multiApi.use(resolveApp, ensureAuthenticated);
