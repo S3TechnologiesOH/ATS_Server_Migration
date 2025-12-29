@@ -17,6 +17,16 @@ const jwt = require("jsonwebtoken");
 const jwksRsa = require("jwks-rsa");
 const { buildSpec, buildSpecForApp } = require("./swagger");
 
+// Multi-tenant support
+const dbManager = require("./dbManager");
+const {
+  resolveTenant,
+  verifyTenantAccess,
+  extractSubdomain,
+  restoreSubdomainFromSession,
+  buildTenantRedirectUrl,
+} = require("./middleware/tenantResolver");
+
 // Optional hardening (uncomment if installed):
 // const helmet = require('helmet');
 // const morgan = require('morgan');
@@ -226,6 +236,12 @@ const pools = initPools(APP_IDS);
 // See migrations/ directory
 
 function attachAppDb(appId, req) {
+  // If already in tenant mode, req.db is already set by resolveTenant middleware
+  if (req.tenantMode && req.db) {
+    req.appId = appId;
+    return;
+  }
+
   req.appId = appId;
   req.db = pools[appId];
   if (VERBOSE_APP_DEBUG)
@@ -310,6 +326,9 @@ app.use(
     },
   })
 );
+
+// Multi-tenant: resolve tenant from subdomain early (after session, before routes)
+app.use(resolveTenant);
 
 // Swagger will be configured after ensureAuthenticated is defined below
 
@@ -412,6 +431,10 @@ const OIDC_SCOPES = ["openid", "profile", "email"];
 function buildAuthUrl(req, res, next) {
   // If already authenticated, redirect directly to success page
   if (req.session?.user) {
+    // If in tenant mode, redirect back to tenant subdomain
+    if (req.tenantMode && req.subdomain) {
+      return res.redirect(buildTenantRedirectUrl(req.subdomain, "/auth/success"));
+    }
     return res.redirect("/auth/success");
   }
 
@@ -419,6 +442,13 @@ function buildAuthUrl(req, res, next) {
   const nonce = crypto.randomBytes(16).toString("hex");
   req.session.authState = state;
   req.session.authNonce = nonce;
+
+  // Save subdomain to session for post-auth redirect (multi-tenant support)
+  const subdomain = extractSubdomain(req.hostname);
+  if (subdomain) {
+    req.session.pendingSubdomain = subdomain;
+  }
+
   const authCodeUrlParameters = {
     scopes: OIDC_SCOPES,
     redirectUri: AZURE_AD_REDIRECT_URI,
@@ -446,7 +476,7 @@ async function handleAuthRedirect(req, res, next) {
     const response = await msalClient.acquireTokenByCode(tokenReq);
     // Basic claims extraction
     const idTokenClaims = response.idTokenClaims || {};
-    req.session.user = {
+    const user = {
       id: idTokenClaims.oid || idTokenClaims.sub,
       displayName: idTokenClaims.name,
       emails:
@@ -459,8 +489,57 @@ async function handleAuthRedirect(req, res, next) {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
     };
+
+    // Check if returning to a tenant subdomain (multi-tenant support)
+    const pendingSubdomain = restoreSubdomainFromSession(req);
+    if (pendingSubdomain && dbManager.isInitialized()) {
+      const tenant = await dbManager.getTenantBySubdomain(pendingSubdomain);
+      if (tenant) {
+        const userEmail = user.emails[0] || idTokenClaims.preferred_username;
+        const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
+        const tenantUser = await dbManager.checkUserAccess(tenant.id, userEmail, microsoftOid);
+
+        if (!tenantUser) {
+          // User authenticated but NOT in tenant allowlist
+          await dbManager.logAccess(tenant.id, userEmail, "access_denied", req, {
+            reason: "not_in_allowlist_at_login",
+          });
+          delete req.session.pendingSubdomain;
+          delete req.session.authState;
+          delete req.session.authNonce;
+          return res.status(403).send(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>Access Denied</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #dc3545;">Access Denied</h1>
+              <p>Your account (${userEmail}) does not have access to ${tenant.name}.</p>
+              <p>Please contact your administrator to request access.</p>
+            </body>
+            </html>
+          `);
+        }
+
+        // Store tenant info in session for faster subsequent checks
+        user.appTenantId = tenant.id;
+        user.appTenantSubdomain = pendingSubdomain;
+        user.appTenantRole = tenantUser.role;
+
+        // Log successful login
+        await dbManager.logAccess(tenant.id, userEmail, "login", req);
+      }
+    }
+
+    req.session.user = user;
+    delete req.session.pendingSubdomain;
     delete req.session.authState;
     delete req.session.authNonce;
+
+    // Redirect back to tenant subdomain if applicable
+    if (pendingSubdomain) {
+      return res.redirect(buildTenantRedirectUrl(pendingSubdomain, "/auth/success"));
+    }
+
     res.redirect("/auth/success");
   } catch (err) {
     next(err);
@@ -635,7 +714,13 @@ function ensureAuthenticated(req, res, next) {
   }
 
   // Fallback to session-based auth
-  if (req.session?.user) return next();
+  if (req.session?.user) {
+    // If in tenant mode, verify user is in tenant allowlist
+    if (req.tenantMode) {
+      return verifyTenantAccess(req, res, next);
+    }
+    return next();
+  }
   if (process.env.AUTH_DEBUG === "1") {
     console.log("[AUTH_DEBUG] 401", {
       path: req.path,
@@ -1371,10 +1456,20 @@ io.on("connection", (socket) => {
 });
 
 // --- Start ---
-server.listen(port, "0.0.0.0", () => {
-  // Keep a single concise startup line (not gated)
-  console.log(`Server listening on port ${port}`);
-});
+(async () => {
+  // Initialize multi-tenant database manager (connects to master database)
+  try {
+    await dbManager.initialize();
+  } catch (err) {
+    console.warn("[DbManager] Failed to initialize (multi-tenant features disabled):", err.message);
+    // Continue without multi-tenant - legacy mode will still work
+  }
+
+  server.listen(port, "0.0.0.0", () => {
+    // Keep a single concise startup line (not gated)
+    console.log(`Server listening on port ${port}`);
+  });
+})();
 
 // --- Graceful shutdown ---
 process.on("SIGINT", async () => {
@@ -1383,6 +1478,9 @@ process.on("SIGINT", async () => {
   if (reminderScheduler) {
     reminderScheduler.stop();
   }
+  // Shutdown multi-tenant database manager
+  await dbManager.shutdown().catch(() => {});
+  // Shutdown legacy app pools
   const { shutdownPools } = require("./multiTenant");
   await shutdownPools(pools).catch(() => {});
   process.exit(0);
