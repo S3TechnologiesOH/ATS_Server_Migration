@@ -20,11 +20,8 @@ const { buildSpec, buildSpecForApp } = require("./swagger");
 // Multi-tenant support
 const dbManager = require("./dbManager");
 const {
-  resolveTenant,
-  verifyTenantAccess,
-  extractSubdomain,
-  restoreSubdomainFromSession,
-  buildTenantRedirectUrl,
+  resolveTenantFromSession,
+  setTenantInSession,
 } = require("./middleware/tenantResolver");
 
 // Optional hardening (uncomment if installed):
@@ -327,8 +324,8 @@ app.use(
   })
 );
 
-// Multi-tenant: resolve tenant from subdomain early (after session, before routes)
-app.use(resolveTenant);
+// Multi-tenant: resolve tenant from user session (after session, before routes)
+app.use(resolveTenantFromSession);
 
 // Swagger will be configured after ensureAuthenticated is defined below
 
@@ -490,54 +487,15 @@ async function handleAuthRedirect(req, res, next) {
       refreshToken: response.refreshToken,
     };
 
-    // Check if returning to a tenant subdomain (multi-tenant support)
-    const pendingSubdomain = restoreSubdomainFromSession(req);
-    if (pendingSubdomain && dbManager.isInitialized()) {
-      const tenant = await dbManager.getTenantBySubdomain(pendingSubdomain);
-      if (tenant) {
-        const userEmail = user.emails[0] || idTokenClaims.preferred_username;
-        const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
-        const tenantUser = await dbManager.checkUserAccess(tenant.id, userEmail, microsoftOid);
-
-        if (!tenantUser) {
-          // User authenticated but NOT in tenant allowlist
-          await dbManager.logAccess(tenant.id, userEmail, "access_denied", req, {
-            reason: "not_in_allowlist_at_login",
-          });
-          delete req.session.pendingSubdomain;
-          delete req.session.authState;
-          delete req.session.authNonce;
-          return res.status(403).send(`
-            <!DOCTYPE html>
-            <html>
-            <head><title>Access Denied</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-              <h1 style="color: #dc3545;">Access Denied</h1>
-              <p>Your account (${userEmail}) does not have access to ${tenant.name}.</p>
-              <p>Please contact your administrator to request access.</p>
-            </body>
-            </html>
-          `);
-        }
-
-        // Store tenant info in session for faster subsequent checks
-        user.appTenantId = tenant.id;
-        user.appTenantSubdomain = pendingSubdomain;
-        user.appTenantRole = tenantUser.role;
-
-        // Log successful login
-        await dbManager.logAccess(tenant.id, userEmail, "login", req);
-      }
-    }
-
     req.session.user = user;
-    delete req.session.pendingSubdomain;
     delete req.session.authState;
     delete req.session.authNonce;
 
-    // Redirect back to tenant subdomain if applicable
-    if (pendingSubdomain) {
-      return res.redirect(buildTenantRedirectUrl(pendingSubdomain, "/auth/success"));
+    // Look up user's tenant and set in session (user-based multi-tenancy)
+    if (dbManager.isInitialized()) {
+      const userEmail = user.emails[0] || idTokenClaims.preferred_username;
+      const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
+      await setTenantInSession(req, userEmail, microsoftOid);
     }
 
     res.redirect("/auth/success");
@@ -1051,12 +1009,22 @@ app.post("/auth/logout", (req, res) => {
  */
 app.get("/api/user", ensureAuthenticated, (req, res) => {
   const { user } = req.session;
-  res.json({
+  const response = {
     app: DEFAULT_APP,
     id: user.id,
     displayName: user.displayName,
     emails: user.emails || [],
-  });
+  };
+  // Include tenant info from session (user-based multi-tenancy)
+  if (user.tenantId && user.tenantName) {
+    response.tenant = {
+      id: user.tenantId,
+      companyName: user.tenantName,
+      subdomain: user.tenantSubdomain,
+      role: user.tenantRole,
+    };
+  }
+  res.json(response);
 });
 
 // Multi-app API router
@@ -1080,12 +1048,22 @@ multiApi.use(resolveApp, ensureAuthenticated);
  */
 multiApi.get("/user", (req, res) => {
   const { user } = req.session;
-  res.json({
+  const response = {
     app: req.appId,
     id: user.id,
     displayName: user.displayName,
     emails: user.emails || [],
-  });
+  };
+  // Include tenant info from session (user-based multi-tenancy)
+  if (user.tenantId && user.tenantName) {
+    response.tenant = {
+      id: user.tenantId,
+      companyName: user.tenantName,
+      subdomain: user.tenantSubdomain,
+      role: user.tenantRole,
+    };
+  }
+  res.json(response);
 });
 
 multiApi.get("/time", async (req, res) => {
