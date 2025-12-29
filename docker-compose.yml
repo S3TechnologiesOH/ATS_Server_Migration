@@ -9,12 +9,20 @@ services:
     #   - "3001:3000"             # Uncomment if you still need direct host access
     environment:
       - NODE_ENV=production
-      # Main database
+      # Main database (legacy single-tenant)
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      # Master database (multi-tenant mode)
+      - MASTER_DB_NAME=${MASTER_DB_NAME}
+      - MASTER_DB_HOST=${MASTER_DB_HOST:-${DB_HOST}}
+      - MASTER_DB_PORT=${MASTER_DB_PORT:-5432}
+      - MASTER_DB_USER=${MASTER_DB_USER:-${DB_USER}}
+      - MASTER_DB_PASSWORD=${MASTER_DB_PASSWORD:-${DB_PASSWORD}}
+      - MASTER_DB_POOL_MAX=${MASTER_DB_POOL_MAX:-5}
+      - TENANT_DB_POOL_MAX=${TENANT_DB_POOL_MAX:-10}
       # Multi-tenant configuration
       - APPS=${APPS}
       - DEFAULT_APP=${DEFAULT_APP}
