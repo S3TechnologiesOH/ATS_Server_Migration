@@ -1029,7 +1029,7 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
 
 /**
  * @openapi
- * /api/tenant/branding:
+ * /tenant/branding:
  *   get:
  *     summary: Get tenant branding colors
  *     security:
@@ -1038,7 +1038,7 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
  *       200: { description: OK }
  *       403: { description: No tenant access }
  */
-app.get("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
+app.get("/tenant/branding", ensureAuthenticated, async (req, res) => {
   const { user } = req.session;
   if (!user?.tenantId) {
     return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
@@ -1066,7 +1066,7 @@ app.get("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
 
 /**
  * @openapi
- * /api/tenant/branding:
+ * /tenant/branding:
  *   put:
  *     summary: Update tenant branding colors
  *     security:
@@ -1084,7 +1084,7 @@ app.get("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
  *       200: { description: OK }
  *       403: { description: Not tenant admin }
  */
-app.put("/api/tenant/branding", ensureAuthenticated, async (req, res) => {
+app.put("/tenant/branding", ensureAuthenticated, async (req, res) => {
   const { user } = req.session;
   if (!user?.tenantId) {
     return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
