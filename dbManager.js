@@ -21,6 +21,7 @@ class DbManager {
     this.tenantConfigs = new Map(); // Cache: Map<tenantId, tenantConfig>
     this.subdomainMap = new Map(); // Cache: Map<subdomain, tenantId>
     this.poolCreationLocks = new Map(); // Prevent race conditions
+    this.failedPools = new Map(); // Cache: Map<tenantId, {error, timestamp}> - avoid retrying failed pools
     this.initialized = false;
   }
 
@@ -161,15 +162,22 @@ class DbManager {
       return this.tenantPools.get(tenantId);
     }
 
+    // Check if pool creation previously failed (avoid retrying for 5 minutes)
+    const RETRY_DELAY = 5 * 60 * 1000; // 5 minutes
+    const failedEntry = this.failedPools.get(tenantId);
+    if (failedEntry && Date.now() - failedEntry.timestamp < RETRY_DELAY) {
+      // Return null instead of throwing - let caller fall back gracefully
+      return null;
+    }
+
     // Prevent race conditions during pool creation
     if (this.poolCreationLocks.has(tenantId)) {
       await this.poolCreationLocks.get(tenantId);
-      // After waiting, verify the pool was actually created
+      // After waiting, check if pool was created or failed
       const pool = this.tenantPools.get(tenantId);
-      if (!pool) {
-        throw new Error(`Tenant pool ${tenantId} creation failed`);
-      }
-      return pool;
+      if (pool) return pool;
+      // Pool creation failed, return null for graceful fallback
+      return null;
     }
 
     // Create lock promise
@@ -184,11 +192,13 @@ class DbManager {
       let tenantConfig = this.tenantConfigs.get(tenantId);
       if (!tenantConfig) {
         const result = await this.masterPool.query(
-          `SELECT * FROM tenants WHERE id = $1 AND status = 'active'`,
+          `SELECT * FROM tenants WHERE id = $1 AND is_active = true`,
           [tenantId]
         );
         if (result.rows.length === 0) {
-          throw new Error(`Tenant ${tenantId} not found or inactive`);
+          console.warn(`[DbManager] Tenant ${tenantId} not found or inactive`);
+          this.failedPools.set(tenantId, { error: 'not_found', timestamp: Date.now() });
+          return null;
         }
         tenantConfig = result.rows[0];
         this.tenantConfigs.set(tenantId, tenantConfig);
@@ -203,6 +213,7 @@ class DbManager {
         password: process.env.DB_PASSWORD,
         max: parseInt(process.env.TENANT_DB_POOL_MAX || '10', 10),
         idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000, // Don't wait forever for bad hosts
       };
 
       const pool = new Pool(poolConfig);
@@ -214,8 +225,15 @@ class DbManager {
       );
       client.release();
 
+      // Clear any previous failure cache
+      this.failedPools.delete(tenantId);
       this.tenantPools.set(tenantId, pool);
       return pool;
+    } catch (err) {
+      // Cache the failure so we don't spam retries
+      console.warn(`[DbManager] Tenant pool ${tenantId} creation failed: ${err.message}`);
+      this.failedPools.set(tenantId, { error: err.message, timestamp: Date.now() });
+      return null;
     } finally {
       this.poolCreationLocks.delete(tenantId);
       resolveLock();

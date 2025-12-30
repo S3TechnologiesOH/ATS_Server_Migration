@@ -129,10 +129,14 @@ async function resolveTenantFromSession(req, res, next) {
     req.tenantId = tenant.id;
     req.tenantMode = true;
     req.tenantRole = user.tenantRole;
-
-    // Get tenant database pool
-    req.db = await dbManager.getTenantDb(tenant.id);
     req.appId = 'ats';
+
+    // Try to get tenant database pool (may return null if pool creation failed)
+    const tenantDb = await dbManager.getTenantDb(tenant.id);
+    if (tenantDb) {
+      req.db = tenantDb;
+    }
+    // If tenantDb is null, req.db will be set by attachAppDb later (legacy fallback)
 
     return next();
   } catch (err) {
