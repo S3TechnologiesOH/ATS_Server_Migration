@@ -11,8 +11,8 @@
  *   // Optional API key (enhances response if provided)
  *   app.get('/public/something', optionalApiKey, handler);
  */
-//
-const dbManager = require("../dbManager");
+
+const dbManager = require('../dbManager');
 
 /**
  * Validate an API key and return tenant info
@@ -20,12 +20,12 @@ const dbManager = require("../dbManager");
  * @returns {Promise<object|null>} - Tenant info or null if invalid
  */
 async function validateApiKey(apiKey) {
-  if (!apiKey || typeof apiKey !== "string") {
+  if (!apiKey || typeof apiKey !== 'string') {
     return null;
   }
 
   if (!dbManager.isInitialized()) {
-    console.error("[ApiKeyAuth] dbManager not initialized");
+    console.error('[ApiKeyAuth] dbManager not initialized');
     return null;
   }
 
@@ -60,12 +60,10 @@ async function validateApiKey(apiKey) {
     const row = result.rows[0];
 
     // Update last_used_at (fire and forget)
-    dbManager
-      .getMasterDb()
-      .query("UPDATE tenant_api_keys SET last_used_at = NOW() WHERE id = $1", [
-        row.api_key_id,
-      ])
-      .catch(() => {});
+    dbManager.getMasterDb().query(
+      'UPDATE tenant_api_keys SET last_used_at = NOW() WHERE id = $1',
+      [row.api_key_id]
+    ).catch(() => {});
 
     return {
       apiKeyId: row.api_key_id,
@@ -84,7 +82,7 @@ async function validateApiKey(apiKey) {
       },
     };
   } catch (err) {
-    console.error("[ApiKeyAuth] Error validating API key:", err.message);
+    console.error('[ApiKeyAuth] Error validating API key:', err.message);
     return null;
   }
 }
@@ -108,10 +106,10 @@ function isOriginAllowed(allowedDomains, origin) {
 
   try {
     const originHost = new URL(origin).hostname.toLowerCase();
-    return allowedDomains.some((domain) => {
+    return allowedDomains.some(domain => {
       const d = domain.toLowerCase().trim();
       // Exact match or wildcard subdomain match
-      return originHost === d || originHost.endsWith("." + d);
+      return originHost === d || originHost.endsWith('.' + d);
     });
   } catch {
     return false;
@@ -126,14 +124,14 @@ function isOriginAllowed(allowedDomains, origin) {
  */
 function extractApiKey(req) {
   // 1. X-API-Key header (preferred)
-  const headerKey = req.headers["x-api-key"];
+  const headerKey = req.headers['x-api-key'];
   if (headerKey) {
     return headerKey;
   }
 
   // 2. Authorization: Bearer <key>
-  const authHeader = req.headers["authorization"];
-  if (authHeader && authHeader.startsWith("Bearer ")) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
 
@@ -154,8 +152,8 @@ async function requireApiKey(req, res, next) {
 
   if (!apiKey) {
     return res.status(401).json({
-      error: "api_key_required",
-      message: "API key is required. Include X-API-Key header.",
+      error: 'api_key_required',
+      message: 'API key is required. Include X-API-Key header.',
     });
   }
 
@@ -163,17 +161,17 @@ async function requireApiKey(req, res, next) {
 
   if (!keyInfo) {
     return res.status(401).json({
-      error: "invalid_api_key",
-      message: "Invalid or revoked API key.",
+      error: 'invalid_api_key',
+      message: 'Invalid or revoked API key.',
     });
   }
 
   // Check origin restriction
-  const origin = req.headers["origin"];
+  const origin = req.headers['origin'];
   if (!isOriginAllowed(keyInfo.allowedDomains, origin)) {
     return res.status(403).json({
-      error: "origin_not_allowed",
-      message: "This API key is not authorized for this domain.",
+      error: 'origin_not_allowed',
+      message: 'This API key is not authorized for this domain.',
     });
   }
 
@@ -189,7 +187,7 @@ async function requireApiKey(req, res, next) {
       req.db = tenantDb;
     }
   } catch (err) {
-    console.error("[ApiKeyAuth] Error getting tenant DB:", err.message);
+    console.error('[ApiKeyAuth] Error getting tenant DB:', err.message);
   }
 
   return next();
@@ -216,7 +214,7 @@ async function optionalApiKey(req, res, next) {
           req.db = tenantDb;
         }
       } catch (err) {
-        console.error("[ApiKeyAuth] Error getting tenant DB:", err.message);
+        console.error('[ApiKeyAuth] Error getting tenant DB:', err.message);
       }
     }
   }
@@ -229,8 +227,8 @@ async function optionalApiKey(req, res, next) {
  * @returns {object} - { apiKey, apiKeyPrefix }
  */
 function generateApiKey() {
-  const crypto = require("crypto");
-  const randomPart = crypto.randomBytes(28).toString("hex"); // 56 chars
+  const crypto = require('crypto');
+  const randomPart = crypto.randomBytes(28).toString('hex'); // 56 chars
   const apiKey = `pk_live_${randomPart}`; // 64 chars total
   const apiKeyPrefix = apiKey.substring(0, 12); // "pk_live_xxxx"
 

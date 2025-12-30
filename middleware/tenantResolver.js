@@ -12,8 +12,8 @@
  *   // After authentication:
  *   app.use(resolveTenantFromSession);
  */
-//
-const dbManager = require("../dbManager");
+
+const dbManager = require('../dbManager');
 
 /**
  * Look up user's tenant after authentication
@@ -21,25 +21,20 @@ const dbManager = require("../dbManager");
  * Returns tenant info or null if user has no tenant access
  */
 async function lookupUserTenant(email, microsoftOid = null) {
-  console.log(
-    "[TenantResolver] lookupUserTenant called with email:",
-    email,
-    "oid:",
-    microsoftOid
-  );
+  console.log('[TenantResolver] lookupUserTenant called with email:', email, 'oid:', microsoftOid);
 
   if (!dbManager.isInitialized()) {
-    console.log("[TenantResolver] dbManager not initialized");
+    console.log('[TenantResolver] dbManager not initialized');
     return null;
   }
 
-  const normalized = (email || "").toLowerCase().trim();
+  const normalized = (email || '').toLowerCase().trim();
   if (!normalized) {
-    console.log("[TenantResolver] No email provided");
+    console.log('[TenantResolver] No email provided');
     return null;
   }
 
-  console.log("[TenantResolver] Looking up normalized email:", normalized);
+  console.log('[TenantResolver] Looking up normalized email:', normalized);
 
   try {
     // Find user's tenant membership
@@ -60,9 +55,7 @@ async function lookupUserTenant(email, microsoftOid = null) {
 
     // Fall back to email lookup
     if (!result || result.rows.length === 0) {
-      console.log(
-        "[TenantResolver] OID lookup returned no results, trying email lookup"
-      );
+      console.log('[TenantResolver] OID lookup returned no results, trying email lookup');
       result = await dbManager.getMasterDb().query(
         `SELECT tu.tenant_id, tu.role, tu.first_name, tu.last_name,
                 t.id, t.company_name, t.subdomain, t.db_name, t.is_active
@@ -72,24 +65,16 @@ async function lookupUserTenant(email, microsoftOid = null) {
          LIMIT 1`,
         [normalized]
       );
-      console.log(
-        "[TenantResolver] Email lookup result rows:",
-        result.rows.length
-      );
+      console.log('[TenantResolver] Email lookup result rows:', result.rows.length);
     }
 
     if (result.rows.length === 0) {
-      console.log("[TenantResolver] No tenant found for email:", normalized);
+      console.log('[TenantResolver] No tenant found for email:', normalized);
       return null;
     }
 
     const row = result.rows[0];
-    console.log(
-      "[TenantResolver] Found tenant:",
-      row.company_name,
-      "role:",
-      row.role
-    );
+    console.log('[TenantResolver] Found tenant:', row.company_name, 'role:', row.role);
     return {
       tenantId: row.tenant_id,
       tenantRole: row.role,
@@ -100,10 +85,7 @@ async function lookupUserTenant(email, microsoftOid = null) {
       userLastName: row.last_name,
     };
   } catch (err) {
-    console.error(
-      "[TenantResolver] Error looking up user tenant:",
-      err.message
-    );
+    console.error('[TenantResolver] Error looking up user tenant:', err.message);
     return null;
   }
 }
@@ -147,32 +129,28 @@ async function resolveTenantFromSession(req, res, next) {
     req.tenantId = tenant.id;
     req.tenantMode = true;
     req.tenantRole = user.tenantRole;
-    req.appId = "ats";
+    req.appId = 'ats';
 
     // Try to get tenant database pool
     const tenantDb = await dbManager.getTenantDb(tenant.id);
     if (!tenantDb) {
       // CRITICAL: Never fall back to shared database - this would leak data between tenants
-      console.error(
-        `[TenantResolver] SECURITY: Tenant database unavailable for tenant ${tenant.id} (${tenant.subdomain}). Blocking request.`
-      );
+      console.error(`[TenantResolver] SECURITY: Tenant database unavailable for tenant ${tenant.id} (${tenant.subdomain}). Blocking request.`);
       return res.status(503).json({
-        error: "tenant_database_unavailable",
-        message:
-          "Your organization's database is temporarily unavailable. Please try again later or contact support.",
+        error: 'tenant_database_unavailable',
+        message: 'Your organization\'s database is temporarily unavailable. Please try again later or contact support.',
       });
     }
 
     req.db = tenantDb;
     return next();
   } catch (err) {
-    console.error("[TenantResolver] Error:", err.message);
+    console.error('[TenantResolver] Error:', err.message);
     // SECURITY: If we have tenant info but failed, do NOT fall back - block the request
     if (req.session?.user?.tenantId) {
       return res.status(503).json({
-        error: "tenant_resolution_failed",
-        message:
-          "Unable to connect to your organization's database. Please try again later.",
+        error: 'tenant_resolution_failed',
+        message: 'Unable to connect to your organization\'s database. Please try again later.',
       });
     }
     // Only allow legacy mode for users without tenant association
@@ -190,17 +168,12 @@ async function resolveTenantFromSession(req, res, next) {
  * @param {string} microsoftOid - Microsoft Object ID from Azure AD
  * @param {string} displayName - Display name from Azure AD
  */
-async function setTenantInSession(
-  req,
-  email,
-  microsoftOid = null,
-  displayName = null
-) {
-  console.log("[TenantResolver] setTenantInSession called for email:", email);
+async function setTenantInSession(req, email, microsoftOid = null, displayName = null) {
+  console.log('[TenantResolver] setTenantInSession called for email:', email);
   const tenantInfo = await lookupUserTenant(email, microsoftOid);
 
-  console.log("[TenantResolver] tenantInfo:", tenantInfo);
-  console.log("[TenantResolver] session.user exists:", !!req.session?.user);
+  console.log('[TenantResolver] tenantInfo:', tenantInfo);
+  console.log('[TenantResolver] session.user exists:', !!req.session?.user);
 
   if (tenantInfo && req.session?.user) {
     req.session.user.tenantId = tenantInfo.tenantId;
@@ -208,29 +181,22 @@ async function setTenantInSession(
     req.session.user.tenantRole = tenantInfo.tenantRole;
     req.session.user.tenantName = tenantInfo.tenantName;
 
-    console.log("[TenantResolver] Set tenant in session:", {
+    console.log('[TenantResolver] Set tenant in session:', {
       tenantId: tenantInfo.tenantId,
       tenantName: tenantInfo.tenantName,
       tenantRole: tenantInfo.tenantRole,
     });
 
     // Update last login and sync Azure AD info (OID, name)
-    dbManager
-      .updateLastLogin(tenantInfo.tenantId, email, {
-        microsoftOid,
-        displayName,
-      })
-      .catch(() => {});
+    dbManager.updateLastLogin(tenantInfo.tenantId, email, {
+      microsoftOid,
+      displayName,
+    }).catch(() => {});
 
     return tenantInfo;
   }
 
-  console.log(
-    "[TenantResolver] Did NOT set tenant in session. tenantInfo:",
-    !!tenantInfo,
-    "session.user:",
-    !!req.session?.user
-  );
+  console.log('[TenantResolver] Did NOT set tenant in session. tenantInfo:', !!tenantInfo, 'session.user:', !!req.session?.user);
   return null;
 }
 
@@ -242,10 +208,10 @@ function requireTenantAdmin(req, res, next) {
     return next(); // Let legacy admin check handle it
   }
 
-  if (req.tenantRole !== "admin") {
+  if (req.tenantRole !== 'admin') {
     return res.status(403).json({
-      error: "forbidden",
-      message: "This action requires tenant administrator privileges.",
+      error: 'forbidden',
+      message: 'This action requires tenant administrator privileges.',
     });
   }
 
@@ -263,8 +229,8 @@ function requireTenantAccess(req, res, next) {
 
   if (!req.session?.user?.tenantId) {
     return res.status(403).json({
-      error: "access_denied",
-      message: "You do not have access to this organization.",
+      error: 'access_denied',
+      message: 'You do not have access to this organization.',
     });
   }
 
