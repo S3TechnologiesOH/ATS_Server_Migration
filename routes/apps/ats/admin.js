@@ -27,7 +27,21 @@ const {
 } = require("./helpers");
 
 const dbManager = require("../../../dbManager");
-const { generateApiKey } = require("../../../middleware/apiKeyAuth");
+
+// Import API key generator (optional - graceful fallback if middleware not deployed yet)
+let generateApiKey;
+try {
+  generateApiKey = require("../../../middleware/apiKeyAuth").generateApiKey;
+} catch (e) {
+  console.warn("[admin] apiKeyAuth middleware not found, using fallback");
+  generateApiKey = () => {
+    const crypto = require("crypto");
+    const randomPart = crypto.randomBytes(28).toString("hex");
+    const apiKey = `pk_live_${randomPart}`;
+    const apiKeyPrefix = apiKey.substring(0, 12);
+    return { apiKey, apiKeyPrefix };
+  };
+}
 
 // ==================== ADMIN STATUS ====================
 // Return admin status without requiring admin (so UI can gate correctly)
