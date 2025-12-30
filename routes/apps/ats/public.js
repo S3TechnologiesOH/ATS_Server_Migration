@@ -1077,6 +1077,243 @@ router.post("/applications/:applicationId/upload/cover-letter", upload.single("f
   }
 });
 
+// ==================== EMBED WIDGET STATIC FILE ====================
+
+// GET /public/embed/widget.js - Serve the embeddable widget JavaScript
+router.get("/embed/widget.js", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Cache-Control", "public, max-age=3600"); // 1 hour cache
+  res.type("application/javascript");
+
+  const widgetPath = path.join(__dirname, "..", "..", "..", "public", "embed", "widget.js");
+  if (fs.existsSync(widgetPath)) {
+    return res.sendFile(widgetPath);
+  }
+  return res.status(404).send("// Widget not found");
+});
+
+// ==================== EMBED APPLICATIONS WITH FILE UPLOAD ====================
+
+// POST /public/embed/apply - Submit application with file uploads (multipart/form-data)
+router.post(
+  "/embed/apply",
+  requireApiKey,
+  upload.fields([
+    { name: "resumeFile", maxCount: 1 },
+    { name: "coverLetterFile", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    applyApiKeyCors(req, res);
+
+    try {
+      const {
+        job_id,
+        name,
+        email,
+        phone,
+        link,
+        question_responses, // JSON string of responses
+      } = req.body || {};
+
+      if (!email) {
+        return res.status(400).json({ error: "email_required", message: "Email is required" });
+      }
+      if (!job_id) {
+        return res.status(400).json({ error: "job_id_required", message: "Job ID is required" });
+      }
+
+      const resumeFile = req.files?.resumeFile?.[0];
+      if (!resumeFile) {
+        return res.status(400).json({ error: "resume_required", message: "Resume file is required" });
+      }
+
+      // Verify job exists and is open
+      const jobResult = await req.db.query(
+        `SELECT job_listing_id, job_requisition_id, job_title, department, location, recruiter_assigned, hiring_manager
+         FROM ${DEFAULT_SCHEMA}.job_listings
+         WHERE job_listing_id = $1 AND LOWER(TRIM(status)) = 'open' AND archived = FALSE`,
+        [parseInt(job_id, 10)]
+      );
+
+      if (jobResult.rows.length === 0) {
+        return res.status(404).json({ error: "job_not_found", message: "Job listing not found or closed" });
+      }
+
+      const job = jobResult.rows[0];
+
+      // Parse name
+      const nameParts = (name || "").trim().split(/\s+/);
+      const firstName = nameParts[0] || "Unknown";
+      const lastName = nameParts.slice(1).join(" ") || "Unknown";
+      const compositeName = name || `${firstName} ${lastName}`.trim();
+
+      // Check/create candidate
+      const findCandidateSql = `SELECT candidate_id FROM ${DEFAULT_SCHEMA}.candidates WHERE LOWER(email) = LOWER($1) LIMIT 1`;
+      const existing = await req.db.query(findCandidateSql, [email]);
+
+      let candidateId;
+      if (existing.rows.length > 0) {
+        candidateId = existing.rows[0].candidate_id;
+        // Update candidate with any new info
+        await req.db.query(
+          `UPDATE ${DEFAULT_SCHEMA}.candidates SET
+            phone = COALESCE($2, phone),
+            first_name = CASE WHEN $3 != 'Unknown' THEN $3 ELSE first_name END,
+            last_name = CASE WHEN $4 != 'Unknown' THEN $4 ELSE last_name END,
+            linkedin_url = COALESCE($5, linkedin_url)
+           WHERE candidate_id = $1`,
+          [candidateId, phone || null, firstName, lastName, link || null]
+        );
+      } else {
+        // Create new candidate
+        const insCandidate = await req.db.query(
+          `INSERT INTO ${DEFAULT_SCHEMA}.candidates (first_name, last_name, email, phone, linkedin_url)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING candidate_id`,
+          [firstName, lastName, email, phone || null, link || null]
+        );
+        candidateId = insCandidate.rows[0].candidate_id;
+      }
+
+      // Create application
+      const insApp = await req.db.query(
+        `INSERT INTO ${DEFAULT_SCHEMA}.applications (
+          candidate_id, application_source, job_listing_id, job_requisition_id,
+          job_title, job_department, job_location, recruiter_assigned,
+          hiring_manager_assigned, name, email, application_date
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        RETURNING application_id`,
+        [
+          candidateId,
+          "embed_widget",
+          job.job_listing_id,
+          job.job_requisition_id,
+          job.job_title,
+          job.department,
+          job.location,
+          job.recruiter_assigned,
+          job.hiring_manager,
+          compositeName,
+          email,
+        ]
+      );
+      const applicationId = insApp.rows[0].application_id;
+
+      // Create initial stage
+      try {
+        await req.db.query(
+          `INSERT INTO ${DEFAULT_SCHEMA}.application_stages (application_id, stage_name, status, updated_at)
+           VALUES ($1, 'Applied', 'new', NOW())`,
+          [applicationId]
+        );
+      } catch {}
+
+      // Store resume file
+      const resumeExt = pickExt(resumeFile.originalname, resumeFile.mimetype);
+      const resumeFilename = `resume_${applicationId}_${Date.now()}${resumeExt}`;
+      const appDir = path.join(FILES_ROOT, "applications", String(applicationId));
+      await ensureDir(appDir);
+      const resumePath = path.join(appDir, resumeFilename);
+      await fs.promises.writeFile(resumePath, resumeFile.buffer);
+      const resumeUrl = `${FILES_PUBLIC_URL}/applications/${applicationId}/${resumeFilename}`;
+
+      await req.db.query(
+        `UPDATE ${DEFAULT_SCHEMA}.applications SET resume_url = $1 WHERE application_id = $2`,
+        [resumeUrl, applicationId]
+      );
+
+      // Store cover letter if provided
+      const coverFile = req.files?.coverLetterFile?.[0];
+      if (coverFile) {
+        const coverExt = pickExt(coverFile.originalname, coverFile.mimetype);
+        const coverFilename = `cover_${applicationId}_${Date.now()}${coverExt}`;
+        const coverPath = path.join(appDir, coverFilename);
+        await fs.promises.writeFile(coverPath, coverFile.buffer);
+        const coverUrl = `${FILES_PUBLIC_URL}/applications/${applicationId}/${coverFilename}`;
+
+        await req.db.query(
+          `UPDATE ${DEFAULT_SCHEMA}.applications SET cover_letter_url = $1 WHERE application_id = $2`,
+          [coverUrl, applicationId]
+        );
+      }
+
+      // Store question responses
+      let responses = [];
+      try {
+        responses = question_responses ? JSON.parse(question_responses) : [];
+      } catch {}
+
+      if (typeof responses === "object" && !Array.isArray(responses)) {
+        // Convert object { key: value } to array format
+        responses = Object.entries(responses).map(([k, v]) => ({
+          question_key: k,
+          response_value: Array.isArray(v) ? v.join(", ") : v,
+        }));
+      }
+
+      for (const resp of responses) {
+        if (!resp.question_key) continue;
+        try {
+          await req.db.query(
+            `INSERT INTO ${DEFAULT_SCHEMA}.application_question_responses
+              (application_id, question_key, response_value)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (application_id, question_key) DO UPDATE SET
+              response_value = EXCLUDED.response_value`,
+            [applicationId, resp.question_key, resp.response_value || null]
+          );
+        } catch (err) {
+          console.error(`[PUBLIC_EMBED_APPLY] Error storing response for ${resp.question_key}:`, err.message);
+        }
+      }
+
+      // Emit real-time event
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("new_application", {
+          application_id: applicationId,
+          candidate_id: candidateId,
+          name: compositeName,
+          email: email,
+          job_title: job.job_title,
+          source: "embed_widget",
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Send confirmation email
+      if (emailService?.isConfigured()) {
+        try {
+          await emailService.sendApplicationConfirmation({
+            candidateEmail: email,
+            candidateName: firstName,
+            jobTitle: job.job_title,
+          });
+        } catch {}
+      }
+
+      return res.status(201).json({
+        success: true,
+        application_id: applicationId,
+        candidate_id: candidateId,
+        message: "Application submitted successfully",
+      });
+    } catch (e) {
+      console.error("[PUBLIC_EMBED_APPLY][ERR]", e);
+      return res.status(500).json({ error: "internal_error", message: "Failed to process application" });
+    }
+  }
+);
+
+// OPTIONS for /embed/apply
+router.options("/embed/apply", (req, res) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, X-API-Key");
+  res.header("Access-Control-Max-Age", "86400");
+  return res.sendStatus(204);
+});
+
 module.exports = router;
 module.exports.initPublic = initPublic;
 module.exports.applyPublicCors = applyPublicCors;
