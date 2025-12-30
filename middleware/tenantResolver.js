@@ -131,17 +131,29 @@ async function resolveTenantFromSession(req, res, next) {
     req.tenantRole = user.tenantRole;
     req.appId = 'ats';
 
-    // Try to get tenant database pool (may return null if pool creation failed)
+    // Try to get tenant database pool
     const tenantDb = await dbManager.getTenantDb(tenant.id);
-    if (tenantDb) {
-      req.db = tenantDb;
+    if (!tenantDb) {
+      // CRITICAL: Never fall back to shared database - this would leak data between tenants
+      console.error(`[TenantResolver] SECURITY: Tenant database unavailable for tenant ${tenant.id} (${tenant.subdomain}). Blocking request.`);
+      return res.status(503).json({
+        error: 'tenant_database_unavailable',
+        message: 'Your organization\'s database is temporarily unavailable. Please try again later or contact support.',
+      });
     }
-    // If tenantDb is null, req.db will be set by attachAppDb later (legacy fallback)
 
+    req.db = tenantDb;
     return next();
   } catch (err) {
     console.error('[TenantResolver] Error:', err.message);
-    // Don't fail the request - fall back to legacy mode
+    // SECURITY: If we have tenant info but failed, do NOT fall back - block the request
+    if (req.session?.user?.tenantId) {
+      return res.status(503).json({
+        error: 'tenant_resolution_failed',
+        message: 'Unable to connect to your organization\'s database. Please try again later.',
+      });
+    }
+    // Only allow legacy mode for users without tenant association
     req.tenant = null;
     req.tenantMode = false;
     return next();

@@ -233,12 +233,17 @@ const pools = initPools(APP_IDS);
 // See migrations/ directory
 
 function attachAppDb(appId, req) {
-  // If already in tenant mode, req.db is already set by resolveTenant middleware
-  if (req.tenantMode && req.db) {
+  // SECURITY: If in tenant mode, NEVER use shared pool - tenant middleware handles db
+  if (req.tenantMode) {
     req.appId = appId;
+    if (!req.db) {
+      // This should never happen - tenant middleware should block if db unavailable
+      console.error('[SECURITY] attachAppDb: tenantMode=true but req.db is null! This is a bug.');
+    }
     return;
   }
 
+  // Legacy mode only - for users without tenant association
   req.appId = appId;
   req.db = pools[appId];
   if (VERBOSE_APP_DEBUG)
