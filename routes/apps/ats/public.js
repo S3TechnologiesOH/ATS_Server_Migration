@@ -20,6 +20,9 @@ const {
   extractTextFromBuffer,
 } = require("./helpers");
 
+const dbManager = require("../../../dbManager");
+const { requireApiKey, optionalApiKey } = require("../../../middleware/apiKeyAuth");
+
 // File upload configuration
 const MAX_UPLOAD_MB = process.env.MAX_UPLOAD_MB || "512";
 const MAX_UPLOAD_BYTES =
@@ -72,6 +75,451 @@ function slugify(s) {
       .slice(0, 60) || "file"
   );
 }
+
+// CORS helper for API key authenticated endpoints
+function applyApiKeyCors(req, res) {
+  const origin = req.headers.origin;
+
+  // If API key has domain restrictions, validate
+  if (req.apiKey?.allowedDomains?.length > 0) {
+    // The apiKeyAuth middleware already validated the origin
+    res.header("Access-Control-Allow-Origin", origin || "*");
+  } else {
+    // No restrictions - allow any origin
+    res.header("Access-Control-Allow-Origin", origin || "*");
+  }
+
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-API-Key, Authorization"
+  );
+}
+
+// ==================== EMBEDDABLE JOB BOARD API (API KEY AUTH) ====================
+
+// OPTIONS handler for CORS preflight (handles all /embed/* routes)
+router.options("/embed/*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization");
+  res.header("Access-Control-Max-Age", "86400");
+  return res.sendStatus(204);
+});
+
+// GET /public/embed/jobs - List open jobs for embeddable widget
+router.get("/embed/jobs", requireApiKey, async (req, res) => {
+  applyApiKeyCors(req, res);
+
+  try {
+    const { rows } = await req.db.query(
+      `SELECT
+        job_listing_id,
+        job_requisition_id,
+        job_title,
+        department,
+        employment_type,
+        location,
+        salary_min,
+        salary_max,
+        description,
+        role_snapshot,
+        day_in_the_life,
+        thrive_here_if,
+        what_you_bring,
+        what_s3_brings,
+        created_at
+      FROM ${DEFAULT_SCHEMA}.job_listings
+      WHERE LOWER(TRIM(status)) = 'open' AND archived = FALSE
+      ORDER BY created_at DESC, job_listing_id DESC`
+    );
+
+    return res.json({
+      success: true,
+      tenant: {
+        name: req.tenantFromApiKey?.companyName,
+        subdomain: req.tenantFromApiKey?.subdomain,
+      },
+      jobs: rows,
+    });
+  } catch (e) {
+    console.error("[PUBLIC_EMBED_JOBS][ERR]", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /public/embed/jobs/:id - Get single job details
+router.get("/embed/jobs/:id", requireApiKey, async (req, res) => {
+  applyApiKeyCors(req, res);
+
+  try {
+    const jobId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ error: "invalid_job_id" });
+    }
+
+    const { rows } = await req.db.query(
+      `SELECT
+        job_listing_id,
+        job_requisition_id,
+        job_title,
+        department,
+        employment_type,
+        location,
+        salary_min,
+        salary_max,
+        description,
+        requirements,
+        role_snapshot,
+        day_in_the_life,
+        thrive_here_if,
+        what_you_bring,
+        what_s3_brings,
+        created_at
+      FROM ${DEFAULT_SCHEMA}.job_listings
+      WHERE job_listing_id = $1 AND LOWER(TRIM(status)) = 'open' AND archived = FALSE`,
+      [jobId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    return res.json({
+      success: true,
+      job: rows[0],
+    });
+  } catch (e) {
+    console.error("[PUBLIC_EMBED_JOB][ERR]", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /public/embed/questions/:job_id - Get application questions for a job
+router.get("/embed/questions/:job_id", requireApiKey, async (req, res) => {
+  applyApiKeyCors(req, res);
+
+  try {
+    const jobId = parseInt(req.params.job_id, 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ error: "invalid_job_id" });
+    }
+
+    // Verify job exists and is open
+    const jobResult = await req.db.query(
+      `SELECT job_listing_id, job_title FROM ${DEFAULT_SCHEMA}.job_listings
+       WHERE job_listing_id = $1 AND LOWER(TRIM(status)) = 'open' AND archived = FALSE`,
+      [jobId]
+    );
+
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    // Get tenant default questions from master DB
+    let tenantQuestions = [];
+    if (req.tenantId && dbManager.isInitialized()) {
+      const masterDb = dbManager.getMasterDb();
+      const tenantResult = await masterDb.query(
+        `SELECT id, question_key, question_type, label, helper_text, placeholder,
+                options, is_required, display_order
+         FROM tenant_application_questions
+         WHERE tenant_id = $1 AND is_active = true
+         ORDER BY display_order ASC, created_at ASC`,
+        [req.tenantId]
+      );
+      tenantQuestions = tenantResult.rows;
+    }
+
+    // Get job-specific overrides from tenant DB
+    let jobOverrides = [];
+    try {
+      const overrideResult = await req.db.query(
+        `SELECT question_key, question_type, label, helper_text, placeholder,
+                options, is_required, display_order, override_mode, tenant_question_id
+         FROM ${DEFAULT_SCHEMA}.job_application_questions
+         WHERE job_listing_id = $1
+         ORDER BY display_order ASC, id ASC`,
+        [jobId]
+      );
+      jobOverrides = overrideResult.rows;
+    } catch (err) {
+      // Table might not exist yet
+    }
+
+    // Build effective questions (same logic as jobs.js)
+    const overrideMap = new Map();
+    const excludedKeys = new Set();
+    const jobOnlyQuestions = [];
+
+    for (const override of jobOverrides) {
+      if (override.override_mode === "exclude") {
+        excludedKeys.add(override.question_key);
+      } else if (override.override_mode === "modify") {
+        overrideMap.set(override.question_key, override);
+      } else if ((override.override_mode === "include" || override.override_mode === "add") && !override.tenant_question_id) {
+        jobOnlyQuestions.push(override);
+      }
+    }
+
+    const effectiveQuestions = [];
+
+    // Add tenant questions (filtered and modified)
+    for (const tq of tenantQuestions) {
+      if (excludedKeys.has(tq.question_key)) continue;
+
+      const override = overrideMap.get(tq.question_key);
+      if (override) {
+        effectiveQuestions.push({
+          question_key: override.question_key,
+          question_type: override.question_type || tq.question_type,
+          label: override.label || tq.label,
+          helper_text: override.helper_text !== null ? override.helper_text : tq.helper_text,
+          placeholder: override.placeholder !== null ? override.placeholder : tq.placeholder,
+          options: override.options || tq.options,
+          is_required: override.is_required !== null ? override.is_required : tq.is_required,
+          display_order: override.display_order,
+        });
+      } else {
+        effectiveQuestions.push({
+          question_key: tq.question_key,
+          question_type: tq.question_type,
+          label: tq.label,
+          helper_text: tq.helper_text,
+          placeholder: tq.placeholder,
+          options: tq.options,
+          is_required: tq.is_required,
+          display_order: tq.display_order,
+        });
+      }
+    }
+
+    // Add job-only questions
+    for (const jq of jobOnlyQuestions) {
+      effectiveQuestions.push({
+        question_key: jq.question_key,
+        question_type: jq.question_type,
+        label: jq.label,
+        helper_text: jq.helper_text,
+        placeholder: jq.placeholder,
+        options: jq.options,
+        is_required: jq.is_required,
+        display_order: jq.display_order,
+      });
+    }
+
+    effectiveQuestions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+    return res.json({
+      success: true,
+      job_id: jobId,
+      job_title: jobResult.rows[0].job_title,
+      questions: effectiveQuestions,
+    });
+  } catch (e) {
+    console.error("[PUBLIC_EMBED_QUESTIONS][ERR]", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /public/embed/branding - Get tenant branding for embeddable widget
+router.get("/embed/branding", requireApiKey, async (req, res) => {
+  applyApiKeyCors(req, res);
+
+  try {
+    const tenant = req.tenantFromApiKey;
+
+    return res.json({
+      success: true,
+      branding: {
+        companyName: tenant?.companyName || null,
+        logoUrl: tenant?.logoUrl || null,
+        primaryColor: tenant?.primaryColor || "#0066cc",
+        secondaryColor: tenant?.secondaryColor || "#f5f5f5",
+      },
+    });
+  } catch (e) {
+    console.error("[PUBLIC_EMBED_BRANDING][ERR]", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// POST /public/embed/applications - Submit application with dynamic question responses
+router.post("/embed/applications", requireApiKey, async (req, res) => {
+  applyApiKeyCors(req, res);
+
+  try {
+    const {
+      email,
+      phone,
+      name,
+      first_name,
+      last_name,
+      job_listing_id,
+      question_responses, // Array of { question_key, response_value }
+    } = req.body || {};
+
+    if (!email) {
+      return res.status(400).json({ error: "email_required" });
+    }
+
+    if (!job_listing_id) {
+      return res.status(400).json({ error: "job_listing_id_required" });
+    }
+
+    // Verify job exists and is open
+    const jobResult = await req.db.query(
+      `SELECT job_listing_id, job_requisition_id, job_title, department, location, recruiter_assigned, hiring_manager
+       FROM ${DEFAULT_SCHEMA}.job_listings
+       WHERE job_listing_id = $1 AND LOWER(TRIM(status)) = 'open' AND archived = FALSE`,
+      [job_listing_id]
+    );
+
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    const job = jobResult.rows[0];
+
+    // Normalize name
+    let compositeName = name;
+    let firstName = first_name;
+    let lastName = last_name;
+
+    if (compositeName && (!firstName || !lastName)) {
+      const parts = compositeName.trim().split(/\s+/);
+      firstName = firstName || parts[0] || "Unknown";
+      lastName = lastName || parts.slice(1).join(" ") || "Unknown";
+    }
+    firstName = firstName || "Unknown";
+    lastName = lastName || "Unknown";
+    compositeName = compositeName || `${firstName} ${lastName}`.trim();
+
+    // Check/create candidate
+    const findCandidateSql = `SELECT candidate_id FROM ${DEFAULT_SCHEMA}.candidates WHERE LOWER(email) = LOWER($1) LIMIT 1`;
+    const existing = await req.db.query(findCandidateSql, [email]);
+
+    let candidateId;
+    if (existing.rows.length > 0) {
+      candidateId = existing.rows[0].candidate_id;
+      // Update candidate with any new info
+      if (phone || firstName !== "Unknown" || lastName !== "Unknown") {
+        await req.db.query(
+          `UPDATE ${DEFAULT_SCHEMA}.candidates SET
+            phone = COALESCE($2, phone),
+            first_name = CASE WHEN $3 != 'Unknown' THEN $3 ELSE first_name END,
+            last_name = CASE WHEN $4 != 'Unknown' THEN $4 ELSE last_name END
+           WHERE candidate_id = $1`,
+          [candidateId, phone || null, firstName, lastName]
+        );
+      }
+    } else {
+      // Create new candidate
+      const insCandidate = await req.db.query(
+        `INSERT INTO ${DEFAULT_SCHEMA}.candidates (first_name, last_name, email, phone)
+         VALUES ($1, $2, $3, $4)
+         RETURNING candidate_id`,
+        [firstName, lastName, email, phone || null]
+      );
+      candidateId = insCandidate.rows[0].candidate_id;
+    }
+
+    // Create application
+    const insApp = await req.db.query(
+      `INSERT INTO ${DEFAULT_SCHEMA}.applications (
+        candidate_id, application_source, job_listing_id, job_requisition_id,
+        job_title, job_department, job_location, recruiter_assigned,
+        hiring_manager_assigned, name, email, application_date
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING application_id`,
+      [
+        candidateId,
+        "embed_widget",
+        job.job_listing_id,
+        job.job_requisition_id,
+        job.job_title,
+        job.department,
+        job.location,
+        job.recruiter_assigned,
+        job.hiring_manager,
+        compositeName,
+        email,
+      ]
+    );
+    const applicationId = insApp.rows[0].application_id;
+
+    // Create initial stage
+    try {
+      await req.db.query(
+        `INSERT INTO ${DEFAULT_SCHEMA}.application_stages (application_id, stage_name, status, updated_at)
+         VALUES ($1, 'Applied', 'new', NOW())`,
+        [applicationId]
+      );
+    } catch {}
+
+    // Store question responses
+    if (Array.isArray(question_responses) && question_responses.length > 0) {
+      for (const resp of question_responses) {
+        if (!resp.question_key) continue;
+
+        try {
+          await req.db.query(
+            `INSERT INTO ${DEFAULT_SCHEMA}.application_question_responses
+              (application_id, question_key, question_label, question_type, response_value)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (application_id, question_key) DO UPDATE SET
+              response_value = EXCLUDED.response_value`,
+            [
+              applicationId,
+              resp.question_key,
+              resp.question_label || null,
+              resp.question_type || null,
+              resp.response_value || null,
+            ]
+          );
+        } catch (err) {
+          console.error(`[PUBLIC_EMBED_APP] Error storing response for ${resp.question_key}:`, err.message);
+        }
+      }
+    }
+
+    // Emit real-time event
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("new_application", {
+        application_id: applicationId,
+        candidate_id: candidateId,
+        name: compositeName,
+        email: email,
+        job_title: job.job_title,
+        source: "embed_widget",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Send confirmation email
+    if (emailService?.isConfigured()) {
+      try {
+        await emailService.sendApplicationConfirmation({
+          candidateEmail: email,
+          candidateName: firstName,
+          jobTitle: job.job_title,
+        });
+      } catch {}
+    }
+
+    return res.status(201).json({
+      success: true,
+      application_id: applicationId,
+      candidate_id: candidateId,
+      message: "Application submitted successfully",
+    });
+  } catch (e) {
+    console.error("[PUBLIC_EMBED_APPLICATION][ERR]", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
 function pickExt(originalName, contentType) {
   const mime = require("mime-types");

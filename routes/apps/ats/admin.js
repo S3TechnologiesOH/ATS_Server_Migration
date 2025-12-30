@@ -26,6 +26,9 @@ const {
   fetchMentions,
 } = require("./helpers");
 
+const dbManager = require("../../../dbManager");
+const { generateApiKey } = require("../../../middleware/apiKeyAuth");
+
 // ==================== ADMIN STATUS ====================
 // Return admin status without requiring admin (so UI can gate correctly)
 router.get("/status", async (req, res) => {
@@ -1113,6 +1116,571 @@ router.delete("/roles/:roleId", requireAdmin, async (req, res) => {
     return res.json({ success: true });
   } catch (e) {
     console.error("[admin-delete-role] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// ==================== API KEY MANAGEMENT ====================
+// Note: API keys are stored in the master database, not tenant database
+
+// GET /admin/api-keys - List API keys (prefix only for security)
+router.get("/api-keys", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "API keys require tenant context" });
+    }
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `SELECT id, api_key_prefix, name, description, allowed_domains, rate_limit_per_minute,
+              is_active, last_used_at, created_at
+       FROM tenant_api_keys
+       WHERE tenant_id = $1 AND revoked_at IS NULL
+       ORDER BY created_at DESC`,
+      [req.tenantId]
+    );
+
+    return res.json(result.rows);
+  } catch (e) {
+    console.error("[admin-list-api-keys] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// POST /admin/api-keys - Generate new API key (full key shown only once!)
+router.post("/api-keys", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "API keys require tenant context" });
+    }
+
+    const { name, description, allowed_domains, rate_limit_per_minute } = req.body || {};
+    const { apiKey, apiKeyPrefix } = generateApiKey();
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `INSERT INTO tenant_api_keys (tenant_id, api_key, api_key_prefix, name, description, allowed_domains, rate_limit_per_minute)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, api_key_prefix, name, description, allowed_domains, rate_limit_per_minute, is_active, created_at`,
+      [
+        req.tenantId,
+        apiKey,
+        apiKeyPrefix,
+        name || "Default Key",
+        description || null,
+        allowed_domains || null,
+        rate_limit_per_minute || 100,
+      ]
+    );
+
+    // Return the full API key ONLY on creation - it won't be shown again
+    return res.status(201).json({
+      ...result.rows[0],
+      api_key: apiKey, // Full key shown only once!
+      warning: "Save this API key now. It will not be shown again.",
+    });
+  } catch (e) {
+    console.error("[admin-create-api-key] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// PUT /admin/api-keys/:id - Update API key metadata
+router.put("/api-keys/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "API keys require tenant context" });
+    }
+
+    const keyId = parseInt(req.params.id, 10);
+    const { name, description, allowed_domains, rate_limit_per_minute, is_active } = req.body || {};
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+    if (allowed_domains !== undefined) {
+      updates.push(`allowed_domains = $${paramIndex++}`);
+      params.push(allowed_domains);
+    }
+    if (rate_limit_per_minute !== undefined) {
+      updates.push(`rate_limit_per_minute = $${paramIndex++}`);
+      params.push(rate_limit_per_minute);
+    }
+    if (is_active !== undefined) {
+      updates.push(`is_active = $${paramIndex++}`);
+      params.push(is_active);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "no_updates_provided" });
+    }
+
+    params.push(keyId, req.tenantId);
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `UPDATE tenant_api_keys SET ${updates.join(", ")}
+       WHERE id = $${paramIndex} AND tenant_id = $${paramIndex + 1} AND revoked_at IS NULL
+       RETURNING id, api_key_prefix, name, description, allowed_domains, rate_limit_per_minute, is_active, created_at`,
+      params
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "api_key_not_found" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (e) {
+    console.error("[admin-update-api-key] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// DELETE /admin/api-keys/:id - Revoke API key (soft delete)
+router.delete("/api-keys/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "API keys require tenant context" });
+    }
+
+    const keyId = parseInt(req.params.id, 10);
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `UPDATE tenant_api_keys SET revoked_at = NOW(), is_active = false
+       WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL
+       RETURNING id, api_key_prefix`,
+      [keyId, req.tenantId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "api_key_not_found" });
+    }
+
+    return res.json({ success: true, revoked: result.rows[0] });
+  } catch (e) {
+    console.error("[admin-revoke-api-key] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// ==================== APPLICATION QUESTIONS MANAGEMENT ====================
+// Note: Tenant default questions are stored in master database
+
+// Default questions to seed for new tenants
+const DEFAULT_QUESTIONS = [
+  {
+    key: "values_resonates",
+    type: "textarea",
+    label: "Our values include Push the Boundaries, Own It, Work with Gratitude, Embrace Technology, and Respect. Which resonates most with you and why?",
+    required: true,
+    order: 1,
+  },
+  {
+    key: "motivation",
+    type: "radio",
+    label: "What motivates you most at work?",
+    options: [
+      { value: "solving_problems", label: "Solving problems" },
+      { value: "helping_people", label: "Helping people" },
+      { value: "achieving_results", label: "Achieving measurable results" },
+      { value: "learning", label: "Learning new things" },
+    ],
+    required: true,
+    order: 2,
+  },
+  {
+    key: "onsite_available",
+    type: "yes_no",
+    label: "Are you available to work in office Monday–Friday 8:00am–4:30pm?",
+    required: true,
+    order: 3,
+  },
+  {
+    key: "termination_history",
+    type: "radio",
+    label: "Have you ever been terminated or asked to resign?",
+    options: [
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
+      { value: "prefer_not", label: "Prefer not to say" },
+    ],
+    required: false,
+    order: 4,
+  },
+  {
+    key: "references_available",
+    type: "yes_no",
+    label: "Can you provide professional references upon request?",
+    required: true,
+    order: 5,
+  },
+  {
+    key: "work_authorization",
+    type: "yes_no",
+    label: "Are you authorized to work in the United States without sponsorship?",
+    required: true,
+    order: 6,
+  },
+  {
+    key: "expected_salary_range",
+    type: "text",
+    label: "What is your expected salary range?",
+    placeholder: "e.g., $50,000 - $60,000",
+    required: false,
+    order: 7,
+  },
+];
+
+// GET /admin/questions - List tenant default questions
+router.get("/questions", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `SELECT id, question_key, question_type, label, helper_text, placeholder,
+              options, is_required, min_length, max_length, display_order, is_active, created_at
+       FROM tenant_application_questions
+       WHERE tenant_id = $1
+       ORDER BY display_order ASC, created_at ASC`,
+      [req.tenantId]
+    );
+
+    return res.json(result.rows);
+  } catch (e) {
+    console.error("[admin-list-questions] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// POST /admin/questions - Create new question
+router.post("/questions", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const {
+      question_key,
+      question_type,
+      label,
+      helper_text,
+      placeholder,
+      options,
+      is_required,
+      min_length,
+      max_length,
+      display_order,
+    } = req.body || {};
+
+    if (!question_key || !question_type || !label) {
+      return res.status(400).json({ error: "missing_required_fields", message: "question_key, question_type, and label are required" });
+    }
+
+    // Validate question_type
+    const validTypes = ["text", "textarea", "radio", "checkbox", "yes_no", "dropdown", "file"];
+    if (!validTypes.includes(question_type)) {
+      return res.status(400).json({ error: "invalid_question_type", message: `Valid types: ${validTypes.join(", ")}` });
+    }
+
+    const masterDb = dbManager.getMasterDb();
+
+    // Get max display_order if not provided
+    let order = display_order;
+    if (order === undefined || order === null) {
+      const maxResult = await masterDb.query(
+        `SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM tenant_application_questions WHERE tenant_id = $1`,
+        [req.tenantId]
+      );
+      order = maxResult.rows[0].next_order;
+    }
+
+    const result = await masterDb.query(
+      `INSERT INTO tenant_application_questions
+        (tenant_id, question_key, question_type, label, helper_text, placeholder, options, is_required, min_length, max_length, display_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, question_key, question_type, label, helper_text, placeholder, options, is_required, min_length, max_length, display_order, is_active, created_at`,
+      [
+        req.tenantId,
+        question_key,
+        question_type,
+        label,
+        helper_text || null,
+        placeholder || null,
+        JSON.stringify(options || []),
+        is_required || false,
+        min_length || null,
+        max_length || null,
+        order,
+      ]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (e) {
+    console.error("[admin-create-question] Error:", e);
+    if (e.code === "23505") {
+      return res.status(409).json({ error: "duplicate_question_key", message: "A question with this key already exists" });
+    }
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// PUT /admin/questions/:id - Update question
+router.put("/questions/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const questionId = parseInt(req.params.id, 10);
+    const {
+      question_key,
+      question_type,
+      label,
+      helper_text,
+      placeholder,
+      options,
+      is_required,
+      min_length,
+      max_length,
+      display_order,
+      is_active,
+    } = req.body || {};
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (question_key !== undefined) {
+      updates.push(`question_key = $${paramIndex++}`);
+      params.push(question_key);
+    }
+    if (question_type !== undefined) {
+      const validTypes = ["text", "textarea", "radio", "checkbox", "yes_no", "dropdown", "file"];
+      if (!validTypes.includes(question_type)) {
+        return res.status(400).json({ error: "invalid_question_type", message: `Valid types: ${validTypes.join(", ")}` });
+      }
+      updates.push(`question_type = $${paramIndex++}`);
+      params.push(question_type);
+    }
+    if (label !== undefined) {
+      updates.push(`label = $${paramIndex++}`);
+      params.push(label);
+    }
+    if (helper_text !== undefined) {
+      updates.push(`helper_text = $${paramIndex++}`);
+      params.push(helper_text);
+    }
+    if (placeholder !== undefined) {
+      updates.push(`placeholder = $${paramIndex++}`);
+      params.push(placeholder);
+    }
+    if (options !== undefined) {
+      updates.push(`options = $${paramIndex++}`);
+      params.push(JSON.stringify(options));
+    }
+    if (is_required !== undefined) {
+      updates.push(`is_required = $${paramIndex++}`);
+      params.push(is_required);
+    }
+    if (min_length !== undefined) {
+      updates.push(`min_length = $${paramIndex++}`);
+      params.push(min_length);
+    }
+    if (max_length !== undefined) {
+      updates.push(`max_length = $${paramIndex++}`);
+      params.push(max_length);
+    }
+    if (display_order !== undefined) {
+      updates.push(`display_order = $${paramIndex++}`);
+      params.push(display_order);
+    }
+    if (is_active !== undefined) {
+      updates.push(`is_active = $${paramIndex++}`);
+      params.push(is_active);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "no_updates_provided" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(questionId, req.tenantId);
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `UPDATE tenant_application_questions SET ${updates.join(", ")}
+       WHERE id = $${paramIndex} AND tenant_id = $${paramIndex + 1}
+       RETURNING id, question_key, question_type, label, helper_text, placeholder, options, is_required, min_length, max_length, display_order, is_active, created_at, updated_at`,
+      params
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "question_not_found" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (e) {
+    console.error("[admin-update-question] Error:", e);
+    if (e.code === "23505") {
+      return res.status(409).json({ error: "duplicate_question_key", message: "A question with this key already exists" });
+    }
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// DELETE /admin/questions/:id - Delete question
+router.delete("/questions/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const questionId = parseInt(req.params.id, 10);
+
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `DELETE FROM tenant_application_questions WHERE id = $1 AND tenant_id = $2 RETURNING id, question_key`,
+      [questionId, req.tenantId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "question_not_found" });
+    }
+
+    return res.json({ success: true, deleted: result.rows[0] });
+  } catch (e) {
+    console.error("[admin-delete-question] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// POST /admin/questions/reorder - Update display order for multiple questions
+router.post("/questions/reorder", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const { orders } = req.body || {};
+    // orders should be array of { id, display_order }
+
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return res.status(400).json({ error: "invalid_orders", message: "orders must be an array of { id, display_order }" });
+    }
+
+    const masterDb = dbManager.getMasterDb();
+
+    // Update each question's display_order
+    await masterDb.query("BEGIN");
+    try {
+      for (const item of orders) {
+        await masterDb.query(
+          `UPDATE tenant_application_questions SET display_order = $1, updated_at = NOW()
+           WHERE id = $2 AND tenant_id = $3`,
+          [item.display_order, item.id, req.tenantId]
+        );
+      }
+      await masterDb.query("COMMIT");
+    } catch (err) {
+      await masterDb.query("ROLLBACK");
+      throw err;
+    }
+
+    // Return updated list
+    const result = await masterDb.query(
+      `SELECT id, question_key, question_type, label, helper_text, placeholder,
+              options, is_required, min_length, max_length, display_order, is_active, created_at
+       FROM tenant_application_questions
+       WHERE tenant_id = $1
+       ORDER BY display_order ASC, created_at ASC`,
+      [req.tenantId]
+    );
+
+    return res.json(result.rows);
+  } catch (e) {
+    console.error("[admin-reorder-questions] Error:", e);
+    return res.status(500).json({ error: "internal_error", message: e?.message });
+  }
+});
+
+// POST /admin/questions/seed-defaults - Seed default questions for tenant
+router.post("/questions/seed-defaults", requireAdmin, async (req, res) => {
+  try {
+    if (!req.tenantMode || !req.tenantId) {
+      return res.status(400).json({ error: "tenant_required", message: "Questions require tenant context" });
+    }
+
+    const masterDb = dbManager.getMasterDb();
+
+    // Check if tenant already has questions
+    const existing = await masterDb.query(
+      `SELECT COUNT(*) as count FROM tenant_application_questions WHERE tenant_id = $1`,
+      [req.tenantId]
+    );
+
+    const existingCount = parseInt(existing.rows[0].count, 10);
+
+    // Insert default questions
+    const inserted = [];
+    for (const q of DEFAULT_QUESTIONS) {
+      try {
+        const result = await masterDb.query(
+          `INSERT INTO tenant_application_questions
+            (tenant_id, question_key, question_type, label, helper_text, placeholder, options, is_required, display_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (tenant_id, question_key) DO NOTHING
+           RETURNING id, question_key`,
+          [
+            req.tenantId,
+            q.key,
+            q.type,
+            q.label,
+            q.helper_text || null,
+            q.placeholder || null,
+            JSON.stringify(q.options || []),
+            q.required || false,
+            existingCount + q.order, // Offset order if there are existing questions
+          ]
+        );
+        if (result.rows.length > 0) {
+          inserted.push(result.rows[0]);
+        }
+      } catch (err) {
+        console.error(`[admin-seed-questions] Error inserting ${q.key}:`, err.message);
+      }
+    }
+
+    // Return all questions
+    const result = await masterDb.query(
+      `SELECT id, question_key, question_type, label, helper_text, placeholder,
+              options, is_required, min_length, max_length, display_order, is_active, created_at
+       FROM tenant_application_questions
+       WHERE tenant_id = $1
+       ORDER BY display_order ASC, created_at ASC`,
+      [req.tenantId]
+    );
+
+    return res.json({
+      success: true,
+      inserted_count: inserted.length,
+      total_count: result.rows.length,
+      questions: result.rows,
+    });
+  } catch (e) {
+    console.error("[admin-seed-questions] Error:", e);
     return res.status(500).json({ error: "internal_error", message: e?.message });
   }
 });

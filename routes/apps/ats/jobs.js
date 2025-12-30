@@ -16,6 +16,8 @@ const {
   OPENAI_API_KEY,
 } = require("./helpers");
 
+const dbManager = require("../../../dbManager");
+
 // Dependencies injected via init
 let getLatestCandidateScore = null;
 let generateAndStoreCandidateScore = null;
@@ -641,6 +643,278 @@ router.post("/:id/ai-rank", async (req, res) => {
   } catch (e) {
     console.error("POST /jobs/:id/ai-rank error", e);
     return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ==================== JOB APPLICATION QUESTIONS ====================
+
+// GET /jobs/:id/questions - Get effective questions for a job (tenant defaults merged with overrides)
+router.get("/:id/questions", async (req, res) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ error: "invalid_id" });
+    }
+
+    // Verify job exists
+    const jobResult = await req.db.query(
+      `SELECT job_listing_id, job_title FROM ${DEFAULT_SCHEMA}.job_listings WHERE job_listing_id = $1`,
+      [jobId]
+    );
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    // Get tenant default questions from master DB (if in tenant mode)
+    let tenantQuestions = [];
+    if (req.tenantMode && req.tenantId && dbManager.isInitialized()) {
+      const masterDb = dbManager.getMasterDb();
+      const tenantResult = await masterDb.query(
+        `SELECT id, question_key, question_type, label, helper_text, placeholder,
+                options, is_required, min_length, max_length, display_order, is_active
+         FROM tenant_application_questions
+         WHERE tenant_id = $1 AND is_active = true
+         ORDER BY display_order ASC, created_at ASC`,
+        [req.tenantId]
+      );
+      tenantQuestions = tenantResult.rows;
+    }
+
+    // Get job-specific overrides from tenant DB
+    let jobOverrides = [];
+    try {
+      const overrideResult = await req.db.query(
+        `SELECT id, question_key, question_type, label, helper_text, placeholder,
+                options, is_required, min_length, max_length, display_order, override_mode, tenant_question_id
+         FROM ${DEFAULT_SCHEMA}.job_application_questions
+         WHERE job_listing_id = $1
+         ORDER BY display_order ASC, id ASC`,
+        [jobId]
+      );
+      jobOverrides = overrideResult.rows;
+    } catch (err) {
+      // Table might not exist yet - that's OK
+      console.log("[jobs/questions] job_application_questions table may not exist yet:", err.message);
+    }
+
+    // Build effective questions list
+    // 1. Start with tenant defaults
+    // 2. Apply job overrides (exclude, modify, or add new)
+    const overrideMap = new Map();
+    const excludedKeys = new Set();
+    const jobOnlyQuestions = [];
+
+    for (const override of jobOverrides) {
+      if (override.override_mode === "exclude") {
+        excludedKeys.add(override.question_key);
+      } else if (override.override_mode === "modify") {
+        overrideMap.set(override.question_key, override);
+      } else if (override.override_mode === "include" || override.override_mode === "add") {
+        // Job-specific question not in tenant defaults
+        if (!override.tenant_question_id) {
+          jobOnlyQuestions.push(override);
+        }
+      }
+    }
+
+    // Build final list
+    const effectiveQuestions = [];
+
+    // Add tenant questions (filtered and modified)
+    for (const tq of tenantQuestions) {
+      if (excludedKeys.has(tq.question_key)) {
+        continue; // Skip excluded
+      }
+
+      const override = overrideMap.get(tq.question_key);
+      if (override) {
+        // Use override values
+        effectiveQuestions.push({
+          id: override.id,
+          tenant_question_id: tq.id,
+          question_key: override.question_key,
+          question_type: override.question_type || tq.question_type,
+          label: override.label || tq.label,
+          helper_text: override.helper_text !== null ? override.helper_text : tq.helper_text,
+          placeholder: override.placeholder !== null ? override.placeholder : tq.placeholder,
+          options: override.options || tq.options,
+          is_required: override.is_required !== null ? override.is_required : tq.is_required,
+          min_length: override.min_length !== null ? override.min_length : tq.min_length,
+          max_length: override.max_length !== null ? override.max_length : tq.max_length,
+          display_order: override.display_order,
+          source: "modified",
+        });
+      } else {
+        // Use tenant default
+        effectiveQuestions.push({
+          id: null,
+          tenant_question_id: tq.id,
+          question_key: tq.question_key,
+          question_type: tq.question_type,
+          label: tq.label,
+          helper_text: tq.helper_text,
+          placeholder: tq.placeholder,
+          options: tq.options,
+          is_required: tq.is_required,
+          min_length: tq.min_length,
+          max_length: tq.max_length,
+          display_order: tq.display_order,
+          source: "tenant_default",
+        });
+      }
+    }
+
+    // Add job-only questions
+    for (const jq of jobOnlyQuestions) {
+      effectiveQuestions.push({
+        id: jq.id,
+        tenant_question_id: null,
+        question_key: jq.question_key,
+        question_type: jq.question_type,
+        label: jq.label,
+        helper_text: jq.helper_text,
+        placeholder: jq.placeholder,
+        options: jq.options,
+        is_required: jq.is_required,
+        min_length: jq.min_length,
+        max_length: jq.max_length,
+        display_order: jq.display_order,
+        source: "job_specific",
+      });
+    }
+
+    // Sort by display_order
+    effectiveQuestions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+    return res.json({
+      job_id: jobId,
+      job_title: jobResult.rows[0].job_title,
+      has_overrides: jobOverrides.length > 0,
+      tenant_question_count: tenantQuestions.length,
+      effective_questions: effectiveQuestions,
+      excluded_keys: Array.from(excludedKeys),
+    });
+  } catch (e) {
+    console.error("GET /jobs/:id/questions error", e);
+    return res.status(500).json({ error: "internal_error", message: e.message });
+  }
+});
+
+// PUT /jobs/:id/questions - Set question overrides for a job
+router.put("/:id/questions", async (req, res) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ error: "invalid_id" });
+    }
+
+    // Verify job exists
+    const jobResult = await req.db.query(
+      `SELECT job_listing_id FROM ${DEFAULT_SCHEMA}.job_listings WHERE job_listing_id = $1`,
+      [jobId]
+    );
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    const { overrides } = req.body || {};
+    // overrides: array of { question_key, override_mode, question_type?, label?, options?, is_required?, display_order?, tenant_question_id? }
+
+    if (!Array.isArray(overrides)) {
+      return res.status(400).json({ error: "invalid_overrides", message: "overrides must be an array" });
+    }
+
+    // Clear existing overrides for this job
+    await req.db.query(
+      `DELETE FROM ${DEFAULT_SCHEMA}.job_application_questions WHERE job_listing_id = $1`,
+      [jobId]
+    );
+
+    // Insert new overrides
+    const inserted = [];
+    for (let i = 0; i < overrides.length; i++) {
+      const o = overrides[i];
+      if (!o.question_key || !o.override_mode) {
+        continue; // Skip invalid entries
+      }
+
+      const validModes = ["include", "exclude", "modify", "add"];
+      if (!validModes.includes(o.override_mode)) {
+        continue;
+      }
+
+      try {
+        const result = await req.db.query(
+          `INSERT INTO ${DEFAULT_SCHEMA}.job_application_questions
+            (job_listing_id, tenant_question_id, question_key, question_type, label, helper_text, placeholder, options, is_required, min_length, max_length, display_order, override_mode)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           RETURNING id, question_key, override_mode`,
+          [
+            jobId,
+            o.tenant_question_id || null,
+            o.question_key,
+            o.question_type || "text",
+            o.label || null,
+            o.helper_text || null,
+            o.placeholder || null,
+            JSON.stringify(o.options || []),
+            o.is_required || false,
+            o.min_length || null,
+            o.max_length || null,
+            o.display_order !== undefined ? o.display_order : i,
+            o.override_mode,
+          ]
+        );
+        inserted.push(result.rows[0]);
+      } catch (err) {
+        console.error(`[jobs/questions] Error inserting override for ${o.question_key}:`, err.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      job_id: jobId,
+      overrides_count: inserted.length,
+      overrides: inserted,
+    });
+  } catch (e) {
+    console.error("PUT /jobs/:id/questions error", e);
+    return res.status(500).json({ error: "internal_error", message: e.message });
+  }
+});
+
+// POST /jobs/:id/questions/reset - Reset job to use tenant defaults (remove all overrides)
+router.post("/:id/questions/reset", async (req, res) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ error: "invalid_id" });
+    }
+
+    // Verify job exists
+    const jobResult = await req.db.query(
+      `SELECT job_listing_id FROM ${DEFAULT_SCHEMA}.job_listings WHERE job_listing_id = $1`,
+      [jobId]
+    );
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: "job_not_found" });
+    }
+
+    // Delete all overrides for this job
+    const deleteResult = await req.db.query(
+      `DELETE FROM ${DEFAULT_SCHEMA}.job_application_questions WHERE job_listing_id = $1 RETURNING id`,
+      [jobId]
+    );
+
+    return res.json({
+      success: true,
+      job_id: jobId,
+      removed_count: deleteResult.rowCount,
+      message: "Job questions reset to tenant defaults",
+    });
+  } catch (e) {
+    console.error("POST /jobs/:id/questions/reset error", e);
+    return res.status(500).json({ error: "internal_error", message: e.message });
   }
 });
 
