@@ -147,8 +147,12 @@ async function resolveTenantFromSession(req, res, next) {
 /**
  * Set tenant in session after successful authentication
  * Call this after user logs in successfully
+ * @param {object} req - Express request object
+ * @param {string} email - User's email from Azure AD
+ * @param {string} microsoftOid - Microsoft Object ID from Azure AD
+ * @param {string} displayName - Display name from Azure AD
  */
-async function setTenantInSession(req, email, microsoftOid = null) {
+async function setTenantInSession(req, email, microsoftOid = null, displayName = null) {
   console.log('[TenantResolver] setTenantInSession called for email:', email);
   const tenantInfo = await lookupUserTenant(email, microsoftOid);
 
@@ -167,8 +171,11 @@ async function setTenantInSession(req, email, microsoftOid = null) {
       tenantRole: tenantInfo.tenantRole,
     });
 
-    // Update last login
-    dbManager.updateLastLogin(tenantInfo.tenantId, email).catch(() => {});
+    // Update last login and sync Azure AD info (OID, name)
+    dbManager.updateLastLogin(tenantInfo.tenantId, email, {
+      microsoftOid,
+      displayName,
+    }).catch(() => {});
 
     return tenantInfo;
   }

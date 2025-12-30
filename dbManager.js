@@ -245,14 +245,56 @@ class DbManager {
   }
 
   /**
-   * Update user's last login timestamp
+   * Update user's last login timestamp and sync Azure AD info
+   * @param {number} tenantId - Tenant ID
+   * @param {string} email - User's email
+   * @param {object} options - Optional Azure AD info to sync
+   * @param {string} options.microsoftOid - Microsoft Object ID
+   * @param {string} options.displayName - Display name from Azure AD
    */
-  async updateLastLogin(tenantId, email) {
+  async updateLastLogin(tenantId, email, options = {}) {
     try {
-      await this.masterPool.query(
-        `UPDATE tenant_users SET last_login = NOW() WHERE tenant_id = $1 AND email = $2`,
-        [tenantId, email.toLowerCase()]
-      );
+      const { microsoftOid, displayName } = options;
+      const normalizedEmail = email.toLowerCase();
+
+      // Build dynamic update query based on what info we have
+      const updates = ['last_login = NOW()', 'updated_at = NOW()'];
+      const values = [tenantId, normalizedEmail];
+      let paramIndex = 3;
+
+      // Update microsoft_oid if provided and not already set
+      if (microsoftOid) {
+        updates.push(`microsoft_oid = COALESCE(microsoft_oid, $${paramIndex})`);
+        values.push(microsoftOid);
+        paramIndex++;
+      }
+
+      // Parse and update name from displayName if provided
+      if (displayName) {
+        const nameParts = displayName.trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        if (firstName) {
+          updates.push(`first_name = COALESCE(NULLIF(first_name, ''), $${paramIndex})`);
+          values.push(firstName);
+          paramIndex++;
+        }
+        if (lastName) {
+          updates.push(`last_name = COALESCE(NULLIF(last_name, ''), $${paramIndex})`);
+          values.push(lastName);
+          paramIndex++;
+        }
+      }
+
+      const query = `
+        UPDATE tenant_users
+        SET ${updates.join(', ')}
+        WHERE tenant_id = $1 AND email = $2
+      `;
+
+      await this.masterPool.query(query, values);
+      console.log('[DbManager] Updated user info for:', normalizedEmail);
     } catch (err) {
       console.error('[DbManager] Failed to update last login:', err.message);
     }

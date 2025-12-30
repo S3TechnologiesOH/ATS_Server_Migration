@@ -485,10 +485,12 @@ async function handleAuthRedirect(req, res, next) {
     if (dbManager.isInitialized()) {
       const userEmail = user.emails[0] || idTokenClaims.preferred_username;
       const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
+      const displayName = user.displayName;
       console.log('[Auth] Azure AD emails:', user.emails);
       console.log('[Auth] preferred_username:', idTokenClaims.preferred_username);
+      console.log('[Auth] displayName:', displayName);
       console.log('[Auth] Using email for tenant lookup:', userEmail);
-      const tenantResult = await setTenantInSession(req, userEmail, microsoftOid);
+      const tenantResult = await setTenantInSession(req, userEmail, microsoftOid, displayName);
       console.log('[Auth] setTenantInSession returned:', tenantResult);
       console.log('[Auth] session.user after setTenantInSession:', {
         tenantId: req.session.user?.tenantId,
