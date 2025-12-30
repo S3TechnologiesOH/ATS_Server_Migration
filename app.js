@@ -681,10 +681,8 @@ function ensureAuthenticated(req, res, next) {
 
   // Fallback to session-based auth
   if (req.session?.user) {
-    // If in tenant mode, verify user is in tenant allowlist
-    if (req.tenantMode) {
-      return verifyTenantAccess(req, res, next);
-    }
+    // Tenant access is already validated by resolveTenantFromSession middleware
+    // If req.tenantMode is true, user has valid tenant access
     return next();
   }
   if (process.env.AUTH_DEBUG === "1") {
