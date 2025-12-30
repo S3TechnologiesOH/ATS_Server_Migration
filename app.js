@@ -505,6 +505,13 @@ async function handleAuthRedirect(req, res, next) {
         tenantName: req.session.user?.tenantName,
         tenantRole: req.session.user?.tenantRole,
       });
+
+      // If multi-tenant mode is active but user is not in tenant_users, deny access
+      if (!tenantResult) {
+        console.log('[Auth] User not found in tenant_users, denying access:', userEmail);
+        req.session.destroy(() => {});
+        return res.redirect("/auth/access-denied?reason=no_tenant_access");
+      }
     }
 
     res.redirect("/auth/success");
@@ -980,6 +987,90 @@ app.get("/auth/success", ensureAuthenticated, (req, res) => {
 
 app.get("/auth/failure", (req, res) => {
   res.status(401).json({ error: "login_failed" });
+});
+
+/**
+ * @openapi
+ * /auth/access-denied:
+ *   get:
+ *     summary: Access denied page for users not in tenant_users
+ *     responses:
+ *       403:
+ *         description: Access denied
+ */
+app.get("/auth/access-denied", (req, res) => {
+  const reason = req.query.reason || "unknown";
+  res.status(403).send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Access Denied</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          margin: 0;
+          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        .container {
+          background: white;
+          padding: 3rem;
+          border-radius: 12px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+          text-align: center;
+          max-width: 450px;
+        }
+        .icon {
+          font-size: 4rem;
+          color: #ef4444;
+          margin-bottom: 1rem;
+        }
+        h1 {
+          color: #1f2937;
+          margin: 0 0 0.5rem 0;
+          font-size: 1.5rem;
+        }
+        p {
+          color: #6b7280;
+          margin: 0.5rem 0;
+        }
+        .reason {
+          background: #fef2f2;
+          color: #991b1b;
+          padding: 0.75rem 1rem;
+          border-radius: 6px;
+          margin-top: 1rem;
+          font-size: 0.875rem;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">⛔</div>
+        <h1>Access Denied</h1>
+        <p>Your Microsoft account was authenticated, but you don't have access to this application.</p>
+        <p class="reason">Please contact your administrator to request access.</p>
+      </div>
+      <script>
+        // Notify parent window of failure
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'amd-auth-failure',
+            error: 'access_denied',
+            reason: '${reason}'
+          }, '*');
+        }
+        // Auto-close after a delay
+        setTimeout(() => {
+          window.close();
+        }, 5000);
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 /**
