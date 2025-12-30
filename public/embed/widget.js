@@ -14,26 +14,29 @@
  *     });
  *   </script>
  */
-
-(function() {
-  'use strict';
+//
+(function () {
+  "use strict";
 
   // Detect the base URL from where this script was loaded
   // Try multiple methods since document.currentScript may be null in some loading scenarios
   function detectBaseUrl() {
     // Method 1: document.currentScript (works for synchronously loaded scripts)
     if (document.currentScript?.src) {
-      return document.currentScript.src.replace(/\/public\/embed\/widget\.js.*$/, '');
+      return document.currentScript.src.replace(
+        /\/public\/embed\/widget\.js.*$/,
+        ""
+      );
     }
     // Method 2: Find script by src attribute
     const scripts = document.querySelectorAll('script[src*="widget.js"]');
     for (const script of scripts) {
-      if (script.src.includes('powerhr') || script.src.includes('ats')) {
-        return script.src.replace(/\/public\/embed\/widget\.js.*$/, '');
+      if (script.src.includes("powerhr") || script.src.includes("ats")) {
+        return script.src.replace(/\/public\/embed\/widget\.js.*$/, "");
       }
     }
     // Method 3: Fallback to production URL
-    return 'https://ats.s3protection.com/api/ats/api/ats';
+    return "https://ats.s3protection.com/api/ats/api/ats";
   }
   const API_BASE_URL = detectBaseUrl();
 
@@ -352,24 +355,33 @@
   `;
 
   function htmlEscape(str) {
-    return String(str || '').replace(/[&<>"']/g, ch =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]
+    return String(str || "").replace(
+      /[&<>"']/g,
+      (ch) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[ch])
     );
   }
 
   function stripHtml(html) {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html || '';
-    return tmp.textContent || '';
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html || "";
+    return tmp.textContent || "";
   }
 
   class PowerHRJobsWidget {
     constructor(config) {
       this.apiKey = config.apiKey;
-      this.container = typeof config.container === 'string'
-        ? document.querySelector(config.container)
-        : config.container;
-      this.theme = config.theme || 'auto';
+      this.container =
+        typeof config.container === "string"
+          ? document.querySelector(config.container)
+          : config.container;
+      this.theme = config.theme || "auto";
       this.baseUrl = config.baseUrl || API_BASE_URL;
       this.jobs = [];
       this.questions = [];
@@ -377,11 +389,11 @@
       this.currentJob = null;
 
       if (!this.container) {
-        console.error('[PowerHRJobs] Container not found:', config.container);
+        console.error("[PowerHRJobs] Container not found:", config.container);
         return;
       }
       if (!this.apiKey) {
-        console.error('[PowerHRJobs] API key is required');
+        console.error("[PowerHRJobs] API key is required");
         return;
       }
 
@@ -390,7 +402,7 @@
 
     async init() {
       this.injectStyles();
-      this.container.classList.add('phr-widget');
+      this.container.classList.add("phr-widget");
       this.applyTheme();
       this.showLoading();
 
@@ -399,67 +411,72 @@
         await this.fetchJobs();
         this.renderJobList();
       } catch (err) {
-        console.error('[PowerHRJobs] Init error:', err);
-        this.showError('Unable to load jobs. Please try again later.');
+        console.error("[PowerHRJobs] Init error:", err);
+        this.showError("Unable to load jobs. Please try again later.");
       }
     }
 
     injectStyles() {
-      if (document.getElementById('phr-widget-styles')) return;
-      const style = document.createElement('style');
-      style.id = 'phr-widget-styles';
+      if (document.getElementById("phr-widget-styles")) return;
+      const style = document.createElement("style");
+      style.id = "phr-widget-styles";
       style.textContent = WIDGET_STYLES;
       document.head.appendChild(style);
     }
 
     applyTheme() {
       let theme = this.theme;
-      if (theme === 'auto') {
-        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (theme === "auto") {
+        theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
       }
-      this.container.classList.toggle('phr-theme-dark', theme === 'dark');
+      this.container.classList.toggle("phr-theme-dark", theme === "dark");
     }
 
     async apiFetch(endpoint, options = {}) {
       const url = `${this.baseUrl}${endpoint}`;
-      console.log('[PowerHRJobs] Fetching:', url);
+      console.log("[PowerHRJobs] Fetching:", url);
       try {
         const res = await fetch(url, {
           ...options,
           headers: {
-            'X-API-Key': this.apiKey,
-            'Accept': 'application/json',
+            "X-API-Key": this.apiKey,
+            Accept: "application/json",
             ...options.headers,
           },
         });
         if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          console.error('[PowerHRJobs] API error:', res.status, errorText);
+          const errorText = await res.text().catch(() => "");
+          console.error("[PowerHRJobs] API error:", res.status, errorText);
           throw new Error(`HTTP ${res.status}`);
         }
         const data = await res.json();
-        console.log('[PowerHRJobs] Response:', endpoint, data);
+        console.log("[PowerHRJobs] Response:", endpoint, data);
         return data;
       } catch (err) {
-        console.error('[PowerHRJobs] Fetch failed:', url, err);
+        console.error("[PowerHRJobs] Fetch failed:", url, err);
         throw err;
       }
     }
 
     async fetchBranding() {
       try {
-        const data = await this.apiFetch('/public/embed/branding');
+        const data = await this.apiFetch("/public/embed/branding");
         this.branding = data.branding || {};
         if (this.branding.primary_color) {
-          this.container.style.setProperty('--phr-primary', this.branding.primary_color);
+          this.container.style.setProperty(
+            "--phr-primary",
+            this.branding.primary_color
+          );
         }
       } catch (e) {
-        console.warn('[PowerHRJobs] Branding fetch failed:', e.message);
+        console.warn("[PowerHRJobs] Branding fetch failed:", e.message);
       }
     }
 
     async fetchJobs() {
-      const data = await this.apiFetch('/public/embed/jobs');
+      const data = await this.apiFetch("/public/embed/jobs");
       this.jobs = data.jobs || [];
     }
 
@@ -468,7 +485,7 @@
         const data = await this.apiFetch(`/public/embed/questions/${jobId}`);
         return data.questions || [];
       } catch (e) {
-        console.warn('[PowerHRJobs] Questions fetch failed:', e.message);
+        console.warn("[PowerHRJobs] Questions fetch failed:", e.message);
         return [];
       }
     }
@@ -492,49 +509,67 @@
 
     renderJobList() {
       if (!this.jobs.length) {
-        this.render('<div class="phr-empty">No open positions at this time. Check back soon!</div>');
+        this.render(
+          '<div class="phr-empty">No open positions at this time. Check back soon!</div>'
+        );
         return;
       }
 
-      const cards = this.jobs.map(job => `
+      const cards = this.jobs
+        .map(
+          (job) => `
         <li class="phr-job-card" data-job-id="${job.job_listing_id}">
           <div class="phr-job-meta">
-            <span class="phr-badge">${htmlEscape(job.department || 'General')}</span>
+            <span class="phr-badge">${htmlEscape(
+              job.department || "General"
+            )}</span>
             <span>\u2022</span>
-            <span>${htmlEscape(job.location || 'Remote')}</span>
-            ${job.employment_type ? `<span>\u2022</span><span>${htmlEscape(job.employment_type)}</span>` : ''}
+            <span>${htmlEscape(job.location || "Remote")}</span>
+            ${
+              job.employment_type
+                ? `<span>\u2022</span><span>${htmlEscape(
+                    job.employment_type
+                  )}</span>`
+                : ""
+            }
           </div>
           <h3 class="phr-job-title">${htmlEscape(job.job_title)}</h3>
           <p class="phr-job-summary">${htmlEscape(this.getSummary(job))}</p>
           <div class="phr-job-actions">
-            <button class="phr-btn phr-btn-ghost" data-action="view" data-job-id="${job.job_listing_id}">View Details</button>
-            <button class="phr-btn phr-btn-primary" data-action="apply" data-job-id="${job.job_listing_id}">Apply Now</button>
+            <button class="phr-btn phr-btn-ghost" data-action="view" data-job-id="${
+              job.job_listing_id
+            }">View Details</button>
+            <button class="phr-btn phr-btn-primary" data-action="apply" data-job-id="${
+              job.job_listing_id
+            }">Apply Now</button>
           </div>
         </li>
-      `).join('');
+      `
+        )
+        .join("");
 
       this.render(`<ul class="phr-jobs-list">${cards}</ul>`);
       this.attachListeners();
     }
 
     attachListeners() {
-      this.container.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-action]');
+      this.container.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-action]");
         if (!btn) return;
         const jobId = btn.dataset.jobId;
         const action = btn.dataset.action;
-        if (action === 'view') this.showJobDetail(jobId);
-        if (action === 'apply') this.showApplyForm(jobId);
+        if (action === "view") this.showJobDetail(jobId);
+        if (action === "apply") this.showApplyForm(jobId);
       });
     }
 
     getSummary(job) {
-      const text = stripHtml(job.role_snapshot || job.description || '');
-      return text.length > 150 ? text.slice(0, 147) + '...' : text;
+      const text = stripHtml(job.role_snapshot || job.description || "");
+      return text.length > 150 ? text.slice(0, 147) + "..." : text;
     }
 
     getJob(jobId) {
-      return this.jobs.find(j => String(j.job_listing_id) === String(jobId));
+      return this.jobs.find((j) => String(j.job_listing_id) === String(jobId));
     }
 
     showJobDetail(jobId) {
@@ -544,15 +579,19 @@
       const sections = [];
       const addSection = (title, content) => {
         if (content?.trim()) {
-          sections.push(`<div class="phr-section"><h4>${title}</h4><p>${htmlEscape(content)}</p></div>`);
+          sections.push(
+            `<div class="phr-section"><h4>${title}</h4><p>${htmlEscape(
+              content
+            )}</p></div>`
+          );
         }
       };
-      addSection('Role Snapshot', job.role_snapshot);
-      addSection('A Day in the Life', job.day_in_the_life);
+      addSection("Role Snapshot", job.role_snapshot);
+      addSection("A Day in the Life", job.day_in_the_life);
       addSection("You'll Thrive Here If...", job.thrive_here_if);
-      addSection('What You Bring', job.what_you_bring);
-      addSection('What We Offer', job.what_s3_brings);
-      addSection('Description', job.description);
+      addSection("What You Bring", job.what_you_bring);
+      addSection("What We Offer", job.what_s3_brings);
+      addSection("Description", job.description);
 
       this.showModal(`
         <div class="phr-modal-header">
@@ -561,11 +600,13 @@
         </div>
         <div class="phr-modal-body">
           <div class="phr-job-meta" style="margin-bottom:1rem">
-            <span class="phr-badge">${htmlEscape(job.department || 'General')}</span>
+            <span class="phr-badge">${htmlEscape(
+              job.department || "General"
+            )}</span>
             <span>\u2022</span>
-            <span>${htmlEscape(job.location || 'Remote')}</span>
+            <span>${htmlEscape(job.location || "Remote")}</span>
           </div>
-          ${sections.join('') || '<p>No additional details available.</p>'}
+          ${sections.join("") || "<p>No additional details available.</p>"}
         </div>
         <div class="phr-modal-footer">
           <button class="phr-btn phr-btn-ghost" data-close>Close</button>
@@ -594,9 +635,10 @@
       this.questions = await this.fetchQuestions(jobId);
 
       // Build form
-      const questionsHtml = this.questions.length > 0
-        ? this.renderQuestions(this.questions)
-        : this.renderDefaultQuestions();
+      const questionsHtml =
+        this.questions.length > 0
+          ? this.renderQuestions(this.questions)
+          : this.renderDefaultQuestions();
 
       const formHtml = `
         <div class="phr-modal-header">
@@ -671,55 +713,73 @@
     }
 
     renderQuestions(questions) {
-      return questions.map(q => this.renderQuestion(q)).join('');
+      return questions.map((q) => this.renderQuestion(q)).join("");
     }
 
     renderQuestion(q) {
       const key = htmlEscape(q.question_key);
       const label = htmlEscape(q.label);
       const req = q.is_required;
-      const optMark = req ? ' *' : ' <span class="phr-optional">(optional)</span>';
+      const optMark = req
+        ? " *"
+        : ' <span class="phr-optional">(optional)</span>';
 
       switch (q.question_type) {
-        case 'textarea':
+        case "textarea":
           return `
             <div class="phr-field phr-full">
               <label>${label}${optMark}</label>
-              <textarea name="q_${key}" rows="3" ${req ? 'required' : ''}></textarea>
+              <textarea name="q_${key}" rows="3" ${
+            req ? "required" : ""
+          }></textarea>
             </div>`;
 
-        case 'radio':
-          const radioOpts = (q.options || []).map((opt, i) => {
-            const val = typeof opt === 'object' ? (opt.value || opt.label) : opt;
-            const lbl = typeof opt === 'object' ? opt.label : opt;
-            return `<label><input type="radio" name="q_${key}" value="${htmlEscape(val)}" ${i === 0 && req ? 'required' : ''}> ${htmlEscape(lbl)}</label>`;
-          }).join('');
+        case "radio":
+          const radioOpts = (q.options || [])
+            .map((opt, i) => {
+              const val =
+                typeof opt === "object" ? opt.value || opt.label : opt;
+              const lbl = typeof opt === "object" ? opt.label : opt;
+              return `<label><input type="radio" name="q_${key}" value="${htmlEscape(
+                val
+              )}" ${i === 0 && req ? "required" : ""}> ${htmlEscape(
+                lbl
+              )}</label>`;
+            })
+            .join("");
           return `
             <fieldset class="phr-fieldset phr-full">
               <legend>${label}${optMark}</legend>
               <div class="phr-options">${radioOpts}</div>
             </fieldset>`;
 
-        case 'yes_no':
+        case "yes_no":
           return `
             <fieldset class="phr-fieldset">
               <legend>${label}${optMark}</legend>
               <div class="phr-options">
-                <label><input type="radio" name="q_${key}" value="yes" ${req ? 'required' : ''}> Yes</label>
+                <label><input type="radio" name="q_${key}" value="yes" ${
+            req ? "required" : ""
+          }> Yes</label>
                 <label><input type="radio" name="q_${key}" value="no"> No</label>
               </div>
             </fieldset>`;
 
-        case 'dropdown':
-          const selectOpts = (q.options || []).map(opt => {
-            const val = typeof opt === 'object' ? (opt.value || opt.label) : opt;
-            const lbl = typeof opt === 'object' ? opt.label : opt;
-            return `<option value="${htmlEscape(val)}">${htmlEscape(lbl)}</option>`;
-          }).join('');
+        case "dropdown":
+          const selectOpts = (q.options || [])
+            .map((opt) => {
+              const val =
+                typeof opt === "object" ? opt.value || opt.label : opt;
+              const lbl = typeof opt === "object" ? opt.label : opt;
+              return `<option value="${htmlEscape(val)}">${htmlEscape(
+                lbl
+              )}</option>`;
+            })
+            .join("");
           return `
             <div class="phr-field">
               <label>${label}${optMark}</label>
-              <select name="q_${key}" ${req ? 'required' : ''}>
+              <select name="q_${key}" ${req ? "required" : ""}>
                 <option value="">Select...</option>
                 ${selectOpts}
               </select>
@@ -729,7 +789,7 @@
           return `
             <div class="phr-field phr-full">
               <label>${label}${optMark}</label>
-              <input type="text" name="q_${key}" ${req ? 'required' : ''}>
+              <input type="text" name="q_${key}" ${req ? "required" : ""}>
             </div>`;
       }
     }
@@ -756,22 +816,22 @@
     }
 
     attachFormListeners() {
-      const form = document.getElementById('phr-apply-form');
-      const submitBtn = document.getElementById('phr-submit-btn');
+      const form = document.getElementById("phr-apply-form");
+      const submitBtn = document.getElementById("phr-submit-btn");
 
       // File input handling
-      this.container.querySelectorAll('.phr-file-input').forEach(div => {
+      this.container.querySelectorAll(".phr-file-input").forEach((div) => {
         const input = div.querySelector('input[type="file"]');
-        const nameDisplay = div.querySelector('.phr-file-name');
+        const nameDisplay = div.querySelector(".phr-file-name");
 
-        div.addEventListener('click', () => input.click());
-        input.addEventListener('change', () => {
-          nameDisplay.textContent = input.files[0]?.name || '';
+        div.addEventListener("click", () => input.click());
+        input.addEventListener("change", () => {
+          nameDisplay.textContent = input.files[0]?.name || "";
         });
       });
 
       // Submit handling
-      submitBtn?.addEventListener('click', async () => {
+      submitBtn?.addEventListener("click", async () => {
         if (!form.checkValidity()) {
           form.reportValidity();
           return;
@@ -781,10 +841,10 @@
     }
 
     async submitApplication(form) {
-      const submitBtn = document.getElementById('phr-submit-btn');
+      const submitBtn = document.getElementById("phr-submit-btn");
       const originalText = submitBtn.textContent;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitting...';
+      submitBtn.textContent = "Submitting...";
 
       try {
         const formData = new FormData(form);
@@ -792,15 +852,15 @@
         // Collect question responses
         const responses = {};
         for (const [key, value] of formData.entries()) {
-          if (key.startsWith('q_')) {
+          if (key.startsWith("q_")) {
             responses[key.substring(2)] = value;
           }
         }
-        formData.append('question_responses', JSON.stringify(responses));
+        formData.append("question_responses", JSON.stringify(responses));
 
         const res = await fetch(`${this.baseUrl}/public/embed/apply`, {
-          method: 'POST',
-          headers: { 'X-API-Key': this.apiKey },
+          method: "POST",
+          headers: { "X-API-Key": this.apiKey },
           body: formData,
         });
 
@@ -811,10 +871,10 @@
 
         this.showSuccess();
       } catch (err) {
-        console.error('[PowerHRJobs] Submit error:', err);
+        console.error("[PowerHRJobs] Submit error:", err);
         submitBtn.disabled = false;
         submitBtn.textContent = originalText;
-        alert('Failed to submit application: ' + err.message);
+        alert("Failed to submit application: " + err.message);
       }
     }
 
@@ -824,7 +884,9 @@
           <div class="phr-success">
             <div class="phr-success-icon">\u2713</div>
             <h3>Application Submitted!</h3>
-            <p>Thank you for applying to ${htmlEscape(this.currentJob?.job_title)}. We'll review your application and be in touch soon.</p>
+            <p>Thank you for applying to ${htmlEscape(
+              this.currentJob?.job_title
+            )}. We'll review your application and be in touch soon.</p>
           </div>
         </div>
         <div class="phr-modal-footer">
@@ -835,47 +897,49 @@
 
     showModal(content) {
       // Remove existing modal
-      this.container.querySelector('.phr-overlay')?.remove();
+      this.container.querySelector(".phr-overlay")?.remove();
 
-      const overlay = document.createElement('div');
-      overlay.className = 'phr-overlay';
+      const overlay = document.createElement("div");
+      overlay.className = "phr-overlay";
       overlay.innerHTML = `<div class="phr-modal">${content}</div>`;
       this.container.appendChild(overlay);
 
       // Animate in
-      requestAnimationFrame(() => overlay.classList.add('phr-active'));
+      requestAnimationFrame(() => overlay.classList.add("phr-active"));
 
       // Close handlers
-      overlay.querySelectorAll('[data-close]').forEach(el => {
-        el.addEventListener('click', () => this.closeModal());
+      overlay.querySelectorAll("[data-close]").forEach((el) => {
+        el.addEventListener("click", () => this.closeModal());
       });
-      overlay.addEventListener('click', (e) => {
+      overlay.addEventListener("click", (e) => {
         if (e.target === overlay) this.closeModal();
       });
 
       // Handle apply button in detail modal
-      overlay.querySelector('[data-action="apply"]')?.addEventListener('click', (e) => {
-        const jobId = e.target.dataset.jobId;
-        this.closeModal();
-        setTimeout(() => this.showApplyForm(jobId), 200);
-      });
+      overlay
+        .querySelector('[data-action="apply"]')
+        ?.addEventListener("click", (e) => {
+          const jobId = e.target.dataset.jobId;
+          this.closeModal();
+          setTimeout(() => this.showApplyForm(jobId), 200);
+        });
     }
 
     updateModal(content) {
-      const modal = this.container.querySelector('.phr-modal');
+      const modal = this.container.querySelector(".phr-modal");
       if (modal) {
         modal.innerHTML = content;
         // Re-attach close handlers
-        modal.querySelectorAll('[data-close]').forEach(el => {
-          el.addEventListener('click', () => this.closeModal());
+        modal.querySelectorAll("[data-close]").forEach((el) => {
+          el.addEventListener("click", () => this.closeModal());
         });
       }
     }
 
     closeModal() {
-      const overlay = this.container.querySelector('.phr-overlay');
+      const overlay = this.container.querySelector(".phr-overlay");
       if (overlay) {
-        overlay.classList.remove('phr-active');
+        overlay.classList.remove("phr-active");
         setTimeout(() => overlay.remove(), 200);
       }
     }
@@ -883,19 +947,23 @@
 
   // Auto-init function for data-attribute containers
   function autoInit() {
-    const containers = document.querySelectorAll('[data-phr-api-key]');
+    const containers = document.querySelectorAll("[data-phr-api-key]");
     if (containers.length > 0) {
-      console.log('[PowerHRJobs] Auto-init found', containers.length, 'container(s)');
+      console.log(
+        "[PowerHRJobs] Auto-init found",
+        containers.length,
+        "container(s)"
+      );
     }
-    containers.forEach(el => {
+    containers.forEach((el) => {
       // Skip if already initialized
       if (el.dataset.phrInitialized) return;
-      el.dataset.phrInitialized = 'true';
+      el.dataset.phrInitialized = "true";
 
       window.PowerHRJobs.init({
         apiKey: el.dataset.phrApiKey,
         container: el,
-        theme: el.dataset.phrTheme || 'auto'
+        theme: el.dataset.phrTheme || "auto",
       });
     });
   }
@@ -903,26 +971,28 @@
   // Global API
   window.PowerHRJobs = {
     init: (config) => {
-      console.log('[PowerHRJobs] Initializing widget with config:', {
-        apiKey: config.apiKey ? config.apiKey.substring(0, 12) + '...' : 'MISSING',
+      console.log("[PowerHRJobs] Initializing widget with config:", {
+        apiKey: config.apiKey
+          ? config.apiKey.substring(0, 12) + "..."
+          : "MISSING",
         container: config.container,
-        theme: config.theme
+        theme: config.theme,
       });
       return new PowerHRJobsWidget(config);
     },
     autoInit: autoInit,
-    version: '1.0.0'
+    version: "1.0.0",
   };
 
   // Auto-init: Handle both early and late loading scenarios
-  if (document.readyState === 'loading') {
+  if (document.readyState === "loading") {
     // DOM not ready, wait for it
-    document.addEventListener('DOMContentLoaded', autoInit);
+    document.addEventListener("DOMContentLoaded", autoInit);
   } else {
     // DOM already ready (late load scenario - common in SPAs like Next.js)
     // Run immediately but use setTimeout to ensure script execution completes first
     setTimeout(autoInit, 0);
   }
 
-  console.log('[PowerHRJobs] Widget v1.0.0 loaded. Base URL:', API_BASE_URL);
+  console.log("[PowerHRJobs] Widget v1.0.0 loaded. Base URL:", API_BASE_URL);
 })();
