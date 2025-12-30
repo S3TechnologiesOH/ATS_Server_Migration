@@ -428,10 +428,6 @@ const OIDC_SCOPES = ["openid", "profile", "email"];
 function buildAuthUrl(req, res, next) {
   // If already authenticated, redirect directly to success page
   if (req.session?.user) {
-    // If in tenant mode, redirect back to tenant subdomain
-    if (req.tenantMode && req.subdomain) {
-      return res.redirect(buildTenantRedirectUrl(req.subdomain, "/auth/success"));
-    }
     return res.redirect("/auth/success");
   }
 
@@ -439,12 +435,6 @@ function buildAuthUrl(req, res, next) {
   const nonce = crypto.randomBytes(16).toString("hex");
   req.session.authState = state;
   req.session.authNonce = nonce;
-
-  // Save subdomain to session for post-auth redirect (multi-tenant support)
-  const subdomain = extractSubdomain(req.hostname);
-  if (subdomain) {
-    req.session.pendingSubdomain = subdomain;
-  }
 
   const authCodeUrlParameters = {
     scopes: OIDC_SCOPES,
