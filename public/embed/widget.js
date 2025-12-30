@@ -19,8 +19,23 @@
   'use strict';
 
   // Detect the base URL from where this script was loaded
-  const SCRIPT_URL = document.currentScript?.src || '';
-  const API_BASE_URL = SCRIPT_URL.replace(/\/public\/embed\/widget\.js.*$/, '') || 'https://ats.s3protection.com/api/ats/api/ats';
+  // Try multiple methods since document.currentScript may be null in some loading scenarios
+  function detectBaseUrl() {
+    // Method 1: document.currentScript (works for synchronously loaded scripts)
+    if (document.currentScript?.src) {
+      return document.currentScript.src.replace(/\/public\/embed\/widget\.js.*$/, '');
+    }
+    // Method 2: Find script by src attribute
+    const scripts = document.querySelectorAll('script[src*="widget.js"]');
+    for (const script of scripts) {
+      if (script.src.includes('powerhr') || script.src.includes('ats')) {
+        return script.src.replace(/\/public\/embed\/widget\.js.*$/, '');
+      }
+    }
+    // Method 3: Fallback to production URL
+    return 'https://ats.s3protection.com/api/ats/api/ats';
+  }
+  const API_BASE_URL = detectBaseUrl();
 
   // Widget styles
   const WIDGET_STYLES = `
@@ -406,16 +421,29 @@
     }
 
     async apiFetch(endpoint, options = {}) {
-      const res = await fetch(`${this.baseUrl}${endpoint}`, {
-        ...options,
-        headers: {
-          'X-API-Key': this.apiKey,
-          'Accept': 'application/json',
-          ...options.headers,
-        },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      const url = `${this.baseUrl}${endpoint}`;
+      console.log('[PowerHRJobs] Fetching:', url);
+      try {
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            'X-API-Key': this.apiKey,
+            'Accept': 'application/json',
+            ...options.headers,
+          },
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => '');
+          console.error('[PowerHRJobs] API error:', res.status, errorText);
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        console.log('[PowerHRJobs] Response:', endpoint, data);
+        return data;
+      } catch (err) {
+        console.error('[PowerHRJobs] Fetch failed:', url, err);
+        throw err;
+      }
     }
 
     async fetchBranding() {
@@ -853,20 +881,48 @@
     }
   }
 
-  // Global API
-  window.PowerHRJobs = {
-    init: (config) => new PowerHRJobsWidget(config),
-    version: '1.0.0'
-  };
+  // Auto-init function for data-attribute containers
+  function autoInit() {
+    const containers = document.querySelectorAll('[data-phr-api-key]');
+    if (containers.length > 0) {
+      console.log('[PowerHRJobs] Auto-init found', containers.length, 'container(s)');
+    }
+    containers.forEach(el => {
+      // Skip if already initialized
+      if (el.dataset.phrInitialized) return;
+      el.dataset.phrInitialized = 'true';
 
-  // Auto-init from data attributes
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-phr-api-key]').forEach(el => {
       window.PowerHRJobs.init({
         apiKey: el.dataset.phrApiKey,
         container: el,
         theme: el.dataset.phrTheme || 'auto'
       });
     });
-  });
+  }
+
+  // Global API
+  window.PowerHRJobs = {
+    init: (config) => {
+      console.log('[PowerHRJobs] Initializing widget with config:', {
+        apiKey: config.apiKey ? config.apiKey.substring(0, 12) + '...' : 'MISSING',
+        container: config.container,
+        theme: config.theme
+      });
+      return new PowerHRJobsWidget(config);
+    },
+    autoInit: autoInit,
+    version: '1.0.0'
+  };
+
+  // Auto-init: Handle both early and late loading scenarios
+  if (document.readyState === 'loading') {
+    // DOM not ready, wait for it
+    document.addEventListener('DOMContentLoaded', autoInit);
+  } else {
+    // DOM already ready (late load scenario - common in SPAs like Next.js)
+    // Run immediately but use setTimeout to ensure script execution completes first
+    setTimeout(autoInit, 0);
+  }
+
+  console.log('[PowerHRJobs] Widget v1.0.0 loaded. Base URL:', API_BASE_URL);
 })();
