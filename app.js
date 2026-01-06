@@ -238,9 +238,7 @@ function attachAppDb(appId, req) {
     req.appId = appId;
     if (!req.db) {
       // This should never happen - tenant middleware should block if db unavailable
-      console.error(
-        "[SECURITY] attachAppDb: tenantMode=true but req.db is null! This is a bug."
-      );
+      console.error('[SECURITY] attachAppDb: tenantMode=true but req.db is null! This is a bug.');
     }
     return;
   }
@@ -493,21 +491,13 @@ async function handleAuthRedirect(req, res, next) {
       const userEmail = user.emails[0] || idTokenClaims.preferred_username;
       const microsoftOid = idTokenClaims.oid || idTokenClaims.sub;
       const displayName = user.displayName;
-      console.log("[Auth] Azure AD emails:", user.emails);
-      console.log(
-        "[Auth] preferred_username:",
-        idTokenClaims.preferred_username
-      );
-      console.log("[Auth] displayName:", displayName);
-      console.log("[Auth] Using email for tenant lookup:", userEmail);
-      const tenantResult = await setTenantInSession(
-        req,
-        userEmail,
-        microsoftOid,
-        displayName
-      );
-      console.log("[Auth] setTenantInSession returned:", tenantResult);
-      console.log("[Auth] session.user after setTenantInSession:", {
+      console.log('[Auth] Azure AD emails:', user.emails);
+      console.log('[Auth] preferred_username:', idTokenClaims.preferred_username);
+      console.log('[Auth] displayName:', displayName);
+      console.log('[Auth] Using email for tenant lookup:', userEmail);
+      const tenantResult = await setTenantInSession(req, userEmail, microsoftOid, displayName);
+      console.log('[Auth] setTenantInSession returned:', tenantResult);
+      console.log('[Auth] session.user after setTenantInSession:', {
         tenantId: req.session.user?.tenantId,
         tenantName: req.session.user?.tenantName,
         tenantRole: req.session.user?.tenantRole,
@@ -515,10 +505,7 @@ async function handleAuthRedirect(req, res, next) {
 
       // If multi-tenant mode is active but user is not in tenant_users, deny access
       if (!tenantResult) {
-        console.log(
-          "[Auth] User not found in tenant_users, denying access:",
-          userEmail
-        );
+        console.log('[Auth] User not found in tenant_users, denying access:', userEmail);
         req.session.destroy(() => {});
         return res.redirect("/auth/access-denied?reason=no_tenant_access");
       }
@@ -613,15 +600,9 @@ function ensureAuthenticated(req, res, next) {
   }
   // Allow unauthenticated access to interview reminder action endpoints (confirm/cancel/reschedule)
   // These are token-based one-time action links sent via email (Traefik strips /api prefix)
-  if (
-    /^\/interview-reminders\/(confirm|cancel|reschedule|status)\/[a-f0-9]+\/?$/.test(
-      req.path
-    )
-  ) {
+  if (/^\/interview-reminders\/(confirm|cancel|reschedule|status)\/[a-f0-9]+\/?$/.test(req.path)) {
     if (process.env.AUTH_DEBUG === "1")
-      console.log("[AUTH_DEBUG] Interview reminder action bypass", {
-        path: req.path,
-      });
+      console.log("[AUTH_DEBUG] Interview reminder action bypass", { path: req.path });
     return next();
   }
   // Allow ATS client-credential Bearer tokens for specific POST endpoints
@@ -1123,7 +1104,7 @@ app.post("/auth/logout", (req, res) => {
  */
 app.get("/api/user", ensureAuthenticated, (req, res) => {
   const { user } = req.session;
-  console.log("[/api/user] session.user tenant fields:", {
+  console.log('[/api/user] session.user tenant fields:', {
     tenantId: user?.tenantId,
     tenantName: user?.tenantName,
     tenantSubdomain: user?.tenantSubdomain,
@@ -1144,7 +1125,7 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
       role: user.tenantRole,
     };
   }
-  console.log("[/api/user] returning:", response);
+  console.log('[/api/user] returning:', response);
   res.json(response);
 });
 
@@ -1162,21 +1143,14 @@ app.get("/api/user", ensureAuthenticated, (req, res) => {
 app.get("/tenant/branding", ensureAuthenticated, async (req, res) => {
   const { user } = req.session;
   if (!user?.tenantId) {
-    return res
-      .status(403)
-      .json({
-        error: "no_tenant_access",
-        message: "User is not associated with a tenant",
-      });
+    return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
   }
 
   try {
-    const result = await dbManager
-      .getMasterDb()
-      .query(
-        `SELECT primary_color, secondary_color FROM tenants WHERE id = $1`,
-        [user.tenantId]
-      );
+    const result = await dbManager.getMasterDb().query(
+      `SELECT primary_color, secondary_color FROM tenants WHERE id = $1`,
+      [user.tenantId]
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "tenant_not_found" });
@@ -1215,22 +1189,12 @@ app.get("/tenant/branding", ensureAuthenticated, async (req, res) => {
 app.put("/tenant/branding", ensureAuthenticated, async (req, res) => {
   const { user } = req.session;
   if (!user?.tenantId) {
-    return res
-      .status(403)
-      .json({
-        error: "no_tenant_access",
-        message: "User is not associated with a tenant",
-      });
+    return res.status(403).json({ error: "no_tenant_access", message: "User is not associated with a tenant" });
   }
 
   // Only tenant admins can update branding
   if (user.tenantRole !== "admin") {
-    return res
-      .status(403)
-      .json({
-        error: "forbidden",
-        message: "Only tenant administrators can update branding",
-      });
+    return res.status(403).json({ error: "forbidden", message: "Only tenant administrators can update branding" });
   }
 
   const { primary_color, secondary_color } = req.body;
@@ -1238,20 +1202,10 @@ app.put("/tenant/branding", ensureAuthenticated, async (req, res) => {
   // Validate hex color format
   const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
   if (primary_color && !hexColorRegex.test(primary_color)) {
-    return res
-      .status(400)
-      .json({
-        error: "invalid_color",
-        message: "Primary color must be a valid hex color (e.g., #2d5a27)",
-      });
+    return res.status(400).json({ error: "invalid_color", message: "Primary color must be a valid hex color (e.g., #2d5a27)" });
   }
   if (secondary_color && !hexColorRegex.test(secondary_color)) {
-    return res
-      .status(400)
-      .json({
-        error: "invalid_color",
-        message: "Secondary color must be a valid hex color (e.g., #333333)",
-      });
+    return res.status(400).json({ error: "invalid_color", message: "Secondary color must be a valid hex color (e.g., #333333)" });
   }
 
   try {
@@ -1364,11 +1318,7 @@ if (fs.existsSync(appRoutesDir)) {
   APP_IDS.forEach((aid) => {
     const file = path.join(appRoutesDir, `${aid}.js`);
     const dir = path.join(appRoutesDir, aid); // Also check for directory with index.js
-    const routePath = fs.existsSync(file)
-      ? file
-      : fs.existsSync(dir)
-      ? dir
-      : null;
+    const routePath = fs.existsSync(file) ? file : (fs.existsSync(dir) ? dir : null);
     if (routePath) {
       try {
         const rtr = require(routePath);
@@ -1382,74 +1332,16 @@ if (fs.existsSync(appRoutesDir)) {
           console.log(`Mounted routes for app '${aid}' from ${routePath}`);
         // If ATS, initialize routers with dependencies and start AI scoring backfill
         if (aid === "ats") {
-          // Initialize routers with graphMsal and other dependencies
+          // Initialize routers with graphMsal
           if (typeof rtr.initRouters === "function") {
             try {
-              // Instantiate EmailService
-              const EmailService = require("./services/emailService");
-              const emailService = new EmailService();
-
-              const scoringService = require("./services/scoringService");
-              const atsHelpers = require("./routes/apps/ats/helpers");
-              const axios = require("axios");
-
-              // Helper for text extraction
-              const getExtractedTextForUrl = async (url) => {
-                if (!url) return "";
-                try {
-                  const resp = await axios.get(url, {
-                    responseType: "arraybuffer",
-                  });
-                  const contentType = resp.headers["content-type"] || "";
-                  // Try to guess extension/filename from url or content-disposition
-                  const filename =
-                    url.split("/").pop().split("?")[0] || "file.bin";
-                  return await atsHelpers.extractTextFromBuffer(
-                    resp.data,
-                    filename,
-                    contentType
-                  );
-                } catch (e) {
-                  console.warn(
-                    `[TextExtract] Failed to extract from ${url}:`,
-                    e.message
-                  );
-                  return "";
-                }
-              };
-
-              // Helper for status mapping
-              const mapStatusToStage = (status) => {
-                if (!status) return "Screening";
-                const s = String(status).toLowerCase();
-                if (s.includes("offer")) return "Offer";
-                if (s.includes("hired")) return "Hired";
-                if (s.includes("reject")) return "Rejected";
-                if (s.includes("interview")) return "Interview";
-                return "Screening";
-              };
-
-              const titleCase = (str) => {
-                if (!str) return str;
-                return str.replace(/\b\w/g, (c) => c.toUpperCase());
-              };
-
               rtr.initRouters({
                 graphMsal: msalClient, // Reuse the MSAL client for Graph API
-                emailService,
-                ...scoringService, // injects getLatestCandidateScore, generateAndStoreCandidateScore, etc.
-                getExtractedTextForUrl,
-                mapStatusToStage,
-                titleCase,
-                buildSignedUrl, // from app.js scope
               });
               if (VERBOSE_APP_DEBUG)
-                console.log(`Initialized ATS routers with dependencies`);
+                console.log(`Initialized ATS routers with graphMsal`);
             } catch (initErr) {
-              console.error(
-                `Failed to initialize ATS routers:`,
-                initErr.message
-              );
+              console.error(`Failed to initialize ATS routers:`, initErr.message);
             }
           }
         }
@@ -1680,11 +1572,13 @@ app.post(
   async (req, res) => {
     try {
       if (!reminderScheduler) {
-        return res.status(503).json({
-          success: false,
-          error:
-            "Interview reminder system not initialized. Check SMTP configuration.",
-        });
+        return res
+          .status(503)
+          .json({
+            success: false,
+            error:
+              "Interview reminder system not initialized. Check SMTP configuration.",
+          });
       }
       await reminderScheduler.triggerManualCheck();
       res.json({ success: true, message: "Manual check triggered" });
@@ -1702,22 +1596,15 @@ try {
     console.log("[Updates] Created updates directory at:", UPDATES_DIR);
   }
   // Serve updates with no-cache headers for latest.yml to prevent stale update info
-  app.use(
-    "/updates",
-    (req, res, next) => {
-      // Disable caching for latest.yml to ensure clients always get fresh update info
-      if (req.path === "/latest.yml") {
-        res.setHeader(
-          "Cache-Control",
-          "no-store, no-cache, must-revalidate, proxy-revalidate"
-        );
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      }
-      next();
-    },
-    express.static(UPDATES_DIR)
-  );
+  app.use("/updates", (req, res, next) => {
+    // Disable caching for latest.yml to ensure clients always get fresh update info
+    if (req.path === "/latest.yml") {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+    next();
+  }, express.static(UPDATES_DIR));
   console.log("[Updates] ✓ Serving app updates from /updates at:", UPDATES_DIR);
 } catch (error) {
   console.error(
@@ -1759,10 +1646,7 @@ io.on("connection", (socket) => {
   try {
     await dbManager.initialize();
   } catch (err) {
-    console.warn(
-      "[DbManager] Failed to initialize (multi-tenant features disabled):",
-      err.message
-    );
+    console.warn("[DbManager] Failed to initialize (multi-tenant features disabled):", err.message);
     // Continue without multi-tenant - legacy mode will still work
   }
 
@@ -1814,8 +1698,7 @@ app.get("/files/sign", ensureAuthenticated, async (req, res) => {
         }
       }
     }
-    if (!key || key === "sign")
-      return res.status(400).json({ error: "invalid_key" });
+    if (!key || key === "sign") return res.status(400).json({ error: "invalid_key" });
     // Verify the file exists before signing
     try {
       const absPath = safeJoin(FILES_ROOT, key);
