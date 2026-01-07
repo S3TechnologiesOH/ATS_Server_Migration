@@ -58,7 +58,9 @@ const helpers = require("./helpers");
 // Mount route modules immediately on require (not deferred to createRouter)
 // This ensures routes work when app.js does: const rtr = require('./routes/apps/ats/index.js')
 // NOTE: Share routes must be mounted BEFORE candidates router since they use /candidates/:id/share/* paths
+console.log("[ATS Routes] Mounting shareRouter at / (FIRST)");
 router.use("/", shareRouter); // Share routes (/candidates/:id/share/pdf, /candidates/:id/share/email)
+console.log("[ATS Routes] Mounting candidatesRouter at /candidates");
 router.use("/candidates", candidatesRouter);
 router.use("/jobs", jobsRouter);
 router.use("/applications", applicationsRouter);

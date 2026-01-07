@@ -6,6 +6,8 @@
 const express = require("express");
 const router = express.Router();
 
+console.log("[Share] Loading share routes module...");
+
 const {
   DEFAULT_SCHEMA,
   PEOPLE_TABLE,
@@ -238,11 +240,14 @@ async function aggregateCandidateData(db, candidateId, options = {}) {
 
 // ==================== ROUTES ====================
 
+console.log("[Share] Registering share routes...");
+
 /**
  * POST /candidates/:id/share/pdf
  * Generate and download candidate profile PDF
  */
 router.post("/candidates/:id/share/pdf", async (req, res) => {
+  console.log("[Share] PDF route hit for candidate:", req.params.id);
   try {
     const candidateId = parseInt(req.params.id, 10);
     if (!Number.isFinite(candidateId)) {
@@ -524,6 +529,8 @@ router.get("/candidates/:id/share/preview", async (req, res) => {
     });
   }
 });
+
+console.log("[Share] Share routes registered successfully");
 
 module.exports = router;
 module.exports.initShare = initShare;
