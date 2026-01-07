@@ -249,14 +249,15 @@ router.post("/candidates/:id/share/pdf", async (req, res) => {
       return res.status(400).json({ error: "invalid_candidate_id" });
     }
 
-    const {
-      includePersonalInfo = true,
-      includeJobDetails = true,
-      includeAiEvaluation = true,
-      includeProfessionalSummary = true,
-      includeInterviewQuestions = true,
-      includeResumeHighlights = true,
-    } = req.body || {};
+    // Support both { includeSections: {...} } and { includePersonalInfo, ... } formats
+    const body = req.body || {};
+    const sections = body.includeSections || body;
+    const includePersonalInfo = sections.personalInfo ?? sections.includePersonalInfo ?? true;
+    const includeJobDetails = sections.jobDetails ?? sections.includeJobDetails ?? true;
+    const includeAiEvaluation = sections.aiEvaluation ?? sections.includeAiEvaluation ?? true;
+    const includeProfessionalSummary = sections.professionalSummary ?? sections.includeProfessionalSummary ?? true;
+    const includeInterviewQuestions = sections.interviewQuestions ?? sections.includeInterviewQuestions ?? true;
+    const includeResumeHighlights = sections.resumeHighlights ?? sections.includeResumeHighlights ?? true;
 
     console.log(`[Share] Generating PDF for candidate ${candidateId}`);
 
@@ -287,11 +288,16 @@ router.post("/candidates/:id/share/pdf", async (req, res) => {
       .replace(/\s+/g, "_");
     const filename = `${safeName}_Profile_${Date.now()}.pdf`;
 
-    // Send PDF response
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Length", pdfBuffer.length);
-    res.send(pdfBuffer);
+    // Convert PDF buffer to base64 for JSON response
+    const pdfBase64 = pdfBuffer.toString("base64");
+
+    // Send JSON response with base64 encoded PDF
+    res.json({
+      success: true,
+      pdfBase64,
+      filename,
+      candidateName: data.candidate.name,
+    });
 
     console.log(`[Share] PDF generated successfully for candidate ${candidateId} (${pdfBuffer.length} bytes)`);
   } catch (e) {
@@ -314,17 +320,17 @@ router.post("/candidates/:id/share/email", async (req, res) => {
       return res.status(400).json({ error: "invalid_candidate_id" });
     }
 
-    const {
-      recipients,
-      subject,
-      message,
-      includePersonalInfo = true,
-      includeJobDetails = true,
-      includeAiEvaluation = true,
-      includeProfessionalSummary = true,
-      includeInterviewQuestions = true,
-      includeResumeHighlights = true,
-    } = req.body || {};
+    const body = req.body || {};
+    const { recipients, subject, message } = body;
+
+    // Support both { includeSections: {...} } and { includePersonalInfo, ... } formats
+    const sections = body.includeSections || body;
+    const includePersonalInfo = sections.personalInfo ?? sections.includePersonalInfo ?? true;
+    const includeJobDetails = sections.jobDetails ?? sections.includeJobDetails ?? true;
+    const includeAiEvaluation = sections.aiEvaluation ?? sections.includeAiEvaluation ?? true;
+    const includeProfessionalSummary = sections.professionalSummary ?? sections.includeProfessionalSummary ?? true;
+    const includeInterviewQuestions = sections.interviewQuestions ?? sections.includeInterviewQuestions ?? true;
+    const includeResumeHighlights = sections.resumeHighlights ?? sections.includeResumeHighlights ?? true;
 
     // Validate recipients
     if (!recipients || (Array.isArray(recipients) && recipients.length === 0)) {
