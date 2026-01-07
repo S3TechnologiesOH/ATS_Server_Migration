@@ -59,12 +59,13 @@ async function defaultBuildCandidateVM(db, candidateId) {
   );
   if (!rows || rows.length === 0) return null;
   const row = rows[0];
+  const rowCandidateId = row.candidate_id || row.id; // Support both column names
   const loc = [row.city, row.state, row.country]
     .filter((v) => v && String(v).trim())
     .join(", ") || row.address || "";
   return {
-    id: row.id,
-    candidate_id: row.id,
+    id: rowCandidateId,
+    candidate_id: rowCandidateId,
     first_name: row.first_name || "",
     last_name: row.last_name || "",
     name: `${row.first_name || ""} ${row.last_name || ""}`.trim() || row.email || "Unknown",
