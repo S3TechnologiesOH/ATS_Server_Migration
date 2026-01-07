@@ -591,6 +591,10 @@ function verifyBearerToken(token) {
 }
 
 function ensureAuthenticated(req, res, next) {
+  // Debug: Log all incoming requests to this middleware
+  if (req.path.includes("/share/") || req.path.includes("/candidates/")) {
+    console.log("[AUTH] Request:", req.method, req.path, "hasSession:", !!req.session?.user, "cookies:", !!req.headers.cookie);
+  }
   // Always allow CORS preflight
   if (req.method === "OPTIONS") return next();
   // Explicitly allow any public endpoints (defense-in-depth). These are mounted under /:appId/api/:appId/public/*
@@ -708,6 +712,16 @@ function ensureAuthenticated(req, res, next) {
     // Tenant access is already validated by resolveTenantFromSession middleware
     // If req.tenantMode is true, user has valid tenant access
     return next();
+  }
+  // Always log 401 for share routes to debug
+  if (req.path.includes("/share/")) {
+    console.log("[AUTH] 401 for share route:", {
+      path: req.path,
+      method: req.method,
+      hasSession: !!req.session,
+      hasUser: !!(req.session && req.session.user),
+      cookieHeader: req.headers.cookie ? "present" : "missing",
+    });
   }
   if (process.env.AUTH_DEBUG === "1") {
     console.log("[AUTH_DEBUG] 401", {

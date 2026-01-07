@@ -161,9 +161,12 @@ async function aggregateCandidateData(db, candidateId, options = {}) {
   if (buildCandidateVM) {
     candidate = await buildCandidateVM(db, candidateId);
   } else {
-    // Fallback query
+    // Fallback query - use to_jsonb() for application fields as they may be dynamic
     const result = await db.query(
-      `SELECT p.*, a.job_requisition_id, a.application_date, a.application_source,
+      `SELECT p.*,
+              a.job_requisition_id,
+              a.application_date,
+              to_jsonb(a)->>'application_source' AS application_source,
               jl.job_title
        FROM ${PEOPLE_TABLE} p
        LEFT JOIN LATERAL (
@@ -178,7 +181,7 @@ async function aggregateCandidateData(db, candidateId, options = {}) {
     if (result.rows.length > 0) {
       const row = result.rows[0];
       candidate = {
-        id: row[PEOPLE_PK],
+        id: row[PEOPLE_PK] || row.candidate_id,
         name: `${row.first_name || ""} ${row.last_name || ""}`.trim() || row.email,
         email: row.email,
         phone: row.phone,
