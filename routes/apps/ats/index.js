@@ -57,6 +57,8 @@ const helpers = require("./helpers");
 
 // Mount route modules immediately on require (not deferred to createRouter)
 // This ensures routes work when app.js does: const rtr = require('./routes/apps/ats/index.js')
+// NOTE: Share routes must be mounted BEFORE candidates router since they use /candidates/:id/share/* paths
+router.use("/", shareRouter); // Share routes (/candidates/:id/share/pdf, /candidates/:id/share/email)
 router.use("/candidates", candidatesRouter);
 router.use("/jobs", jobsRouter);
 router.use("/applications", applicationsRouter);
@@ -70,7 +72,6 @@ router.use("/dashboard", dashboardRouter);
 router.use("/public", publicRouter);
 router.use("/", rejectionRouter); // Rejection routes (/send-rejection-email, /rejection-feedback/*, /public/rejection-feedback/*)
 router.use("/", miscRouter); // Misc routes (/health, /departments, /applicants/*, /debug/*, /candidates/:id/duplicate-applications, etc.)
-router.use("/", shareRouter); // Share routes (/candidates/:id/share/pdf, /candidates/:id/share/email)
 
 /**
  * Initialize routers with dependencies (optional - for dependency injection)
