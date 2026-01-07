@@ -157,13 +157,13 @@ async function buildCandidateVM(db, candidateId) {
     SELECT a.${APP_PK} AS application_id,
          a.job_requisition_id,
          a.application_date,
-         to_jsonb(a)->>'status' AS app_status,
+         a.status AS app_status,
          a.expected_salary_range,
-         to_jsonb(a)->>'years_experience' AS years_experience,
-         to_jsonb(a)->>'application_source' AS application_source,
-         to_jsonb(a)->>'resume_url' AS resume_url,
-         to_jsonb(a)->>'cover_letter_url' AS cover_letter_url,
-         COALESCE(to_jsonb(a)->>'photo_url', to_jsonb(a)->>'photo') AS photo_url,
+         a.years_experience,
+         a.application_source,
+         a.resume_url,
+         a.cover_letter_url,
+         COALESCE(a.photo_url, a.photo) AS photo_url,
          a.name AS applicant_name,
          a.email AS applicant_email,
          a.phone AS applicant_phone,
@@ -185,9 +185,9 @@ async function buildCandidateVM(db, candidateId) {
 
   if (!resumeUrl) {
     const r = await db.query(
-      `SELECT to_jsonb(a)->>'resume_url' AS resume_url
+      `SELECT a.resume_url
          FROM ${APP_TABLE} a
-        WHERE a.candidate_id = $1 AND COALESCE(to_jsonb(a)->>'resume_url','') <> ''
+        WHERE a.candidate_id = $1 AND COALESCE(a.resume_url,'') <> ''
         ORDER BY a.application_date DESC NULLS LAST, a.${APP_PK} DESC
         LIMIT 1`,
       [candidateId]
@@ -196,9 +196,9 @@ async function buildCandidateVM(db, candidateId) {
   }
   if (!coverLetterUrl) {
     const r2 = await db.query(
-      `SELECT to_jsonb(a)->>'cover_letter_url' AS cover_letter_url
+      `SELECT a.cover_letter_url
          FROM ${APP_TABLE} a
-        WHERE a.candidate_id = $1 AND COALESCE(to_jsonb(a)->>'cover_letter_url','') <> ''
+        WHERE a.candidate_id = $1 AND COALESCE(a.cover_letter_url,'') <> ''
         ORDER BY a.application_date DESC NULLS LAST, a.${APP_PK} DESC
         LIMIT 1`,
       [candidateId]
@@ -211,7 +211,7 @@ async function buildCandidateVM(db, candidateId) {
     .filter((v) => v && String(v).trim())
     .join(", ") || cand?.address || "";
 
-  return {
+  const vm = {
     id: candidateId,
     name: name || cand?.email || "Unknown",
     email: cand?.email || "n/a",
@@ -226,6 +226,10 @@ async function buildCandidateVM(db, candidateId) {
     coverLetterUrl,
     photoUrl,
   };
+
+  console.log(`[buildCandidateVM] Candidate ${candidateId}: resumeUrl=${resumeUrl || '(none)'}, coverLetterUrl=${coverLetterUrl || '(none)'}`);
+
+  return vm;
 }
 
 /**
@@ -239,18 +243,37 @@ async function buildCandidateScoringContext(db, candidateId, getExtractedTextFor
   if (getExtractedTextForUrl) {
     try {
       if (vm.resumeUrl) {
+        console.log(`[Scoring] Extracting resume text from: ${vm.resumeUrl}`);
         const t = await getExtractedTextForUrl(vm.resumeUrl);
-        if (t) texts.push(`RESUME TEXT:\n${t}`);
+        if (t) {
+          console.log(`[Scoring] Successfully extracted ${t.length} chars from resume`);
+          texts.push(`RESUME TEXT:\n${t}`);
+        } else {
+          console.warn(`[Scoring] Resume extraction returned empty text for: ${vm.resumeUrl}`);
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[Scoring] Resume extraction failed:`, e.message);
+    }
     try {
       if (vm.coverLetterUrl) {
+        console.log(`[Scoring] Extracting cover letter text from: ${vm.coverLetterUrl}`);
         const t = await getExtractedTextForUrl(vm.coverLetterUrl);
-        if (t) texts.push(`COVER LETTER TEXT:\n${t}`);
+        if (t) {
+          console.log(`[Scoring] Successfully extracted ${t.length} chars from cover letter`);
+          texts.push(`COVER LETTER TEXT:\n${t}`);
+        } else {
+          console.warn(`[Scoring] Cover letter extraction returned empty text for: ${vm.coverLetterUrl}`);
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[Scoring] Cover letter extraction failed:`, e.message);
+    }
+  } else {
+    console.warn(`[Scoring] getExtractedTextForUrl is not available - no text extraction will occur`);
   }
   const combined = texts.join("\n\n").slice(0, 25000);
+  console.log(`[Scoring] Total combined text length: ${combined.length} chars (${texts.length} documents)`);
   return { vm, combinedText: combined };
 }
 
@@ -297,7 +320,7 @@ Years of Experience: ${yearsExperience || "Not specified"}
 Expected Salary: ${expectedSalary ? expectedSalary : "Not specified"}
 
 APPLICATION DETAILS:
-${combinedText || "No additional information provided"}`;
+${combinedText || "No resume or cover letter text available. Please evaluate based on the profile information provided above."}`;
 
   const responseFormat = {
     type: "json_schema",
