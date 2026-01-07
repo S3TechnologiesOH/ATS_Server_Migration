@@ -1385,24 +1385,69 @@ if (fs.existsSync(appRoutesDir)) {
               // Helper for text extraction
               const getExtractedTextForUrl = async (url) => {
                 if (!url) return "";
+
+                // Get file paths from helpers
+                const filesRoot = atsHelpers.FILES_ROOT || "/app/app/uploads";
+                const filesPublicUrl = atsHelpers.FILES_PUBLIC_URL || "https://ats.s3protection.com/api/files";
+
+                // Try to convert public URL to local file path
+                let localPath = null;
+                if (url.startsWith(filesPublicUrl)) {
+                  const relPath = url.replace(filesPublicUrl, "").replace(/^\//, "");
+                  localPath = path.join(filesRoot, relPath);
+                  console.log(`[TextExtract] Converted URL to local path: ${localPath}`);
+                }
+
+                // Strategy 1: Check for pre-extracted text sidecar file
+                if (localPath) {
+                  const sidecarPath = localPath + ".txt";
+                  try {
+                    const sidecarText = await fs.promises.readFile(sidecarPath, "utf8");
+                    if (sidecarText && sidecarText.trim()) {
+                      console.log(`[TextExtract] Found sidecar text file (${sidecarText.length} chars): ${sidecarPath}`);
+                      return sidecarText;
+                    }
+                  } catch (e) {
+                    console.log(`[TextExtract] No sidecar file at ${sidecarPath}: ${e.code}`);
+                  }
+                }
+
+                // Strategy 2: Read file from disk and extract text
+                if (localPath) {
+                  try {
+                    const buffer = await fs.promises.readFile(localPath);
+                    const filename = path.basename(localPath);
+                    console.log(`[TextExtract] Reading file from disk: ${localPath} (${buffer.length} bytes)`);
+                    const text = await atsHelpers.extractTextFromBuffer(buffer, filename, null);
+                    if (text && text.trim()) {
+                      console.log(`[TextExtract] Extracted ${text.length} chars from local file`);
+                      // Save sidecar for future use
+                      try {
+                        await fs.promises.writeFile(localPath + ".txt", text, "utf8");
+                      } catch {}
+                      return text;
+                    }
+                  } catch (e) {
+                    console.warn(`[TextExtract] Failed to read local file ${localPath}:`, e.message);
+                  }
+                }
+
+                // Strategy 3: Fall back to HTTP download (for external URLs or if local access fails)
                 try {
+                  console.log(`[TextExtract] Falling back to HTTP download: ${url}`);
                   const resp = await axios.get(url, {
                     responseType: "arraybuffer",
+                    timeout: 30000,
                   });
                   const contentType = resp.headers["content-type"] || "";
-                  // Try to guess extension/filename from url or content-disposition
-                  const filename =
-                    url.split("/").pop().split("?")[0] || "file.bin";
-                  return await atsHelpers.extractTextFromBuffer(
-                    resp.data,
-                    filename,
-                    contentType
-                  );
+                  const filename = url.split("/").pop().split("?")[0] || "file.bin";
+                  const text = await atsHelpers.extractTextFromBuffer(resp.data, filename, contentType);
+                  if (text) {
+                    console.log(`[TextExtract] Extracted ${text.length} chars from HTTP download`);
+                  }
+                  return text;
                 } catch (e) {
-                  console.warn(
-                    `[TextExtract] Failed to extract from ${url}:`,
-                    e.message
-                  );
+                  console.warn(`[TextExtract] HTTP download failed for ${url}:`, e.message);
                   return "";
                 }
               };
