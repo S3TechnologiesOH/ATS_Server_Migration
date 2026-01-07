@@ -1424,27 +1424,48 @@ if (fs.existsSync(appRoutesDir)) {
               };
 
               // Wrap scoringService functions to bind getExtractedTextForUrl
-              const wrappedBuildCandidateScoringContext = async (db, candidateId) => {
-                return scoringService.buildCandidateScoringContext(db, candidateId, getExtractedTextForUrl);
+              const wrappedBuildCandidateScoringContext = async (
+                db,
+                candidateId
+              ) => {
+                return scoringService.buildCandidateScoringContext(
+                  db,
+                  candidateId,
+                  getExtractedTextForUrl
+                );
               };
 
-              const wrappedGenerateAndStoreCandidateScore = async (db, candidateId, options = {}) => {
-                return scoringService.generateAndStoreCandidateScore(db, candidateId, {
-                  ...options,
-                  getExtractedTextForUrl,
-                });
+              const wrappedGenerateAndStoreCandidateScore = async (
+                db,
+                candidateId,
+                options = {}
+              ) => {
+                return scoringService.generateAndStoreCandidateScore(
+                  db,
+                  candidateId,
+                  {
+                    ...options,
+                    getExtractedTextForUrl,
+                  }
+                );
               };
 
               const wrappedEnqueueCandidateScore = (db, candidateId) => {
-                return scoringService.enqueueCandidateScore(db, candidateId, getExtractedTextForUrl);
+                return scoringService.enqueueCandidateScore(
+                  db,
+                  candidateId,
+                  getExtractedTextForUrl
+                );
               };
-
+              //
               rtr.initRouters({
                 graphMsal: msalClient, // Reuse the MSAL client for Graph API
                 emailService,
                 getLatestCandidateScore: scoringService.getLatestCandidateScore,
-                buildCandidateScoringContext: wrappedBuildCandidateScoringContext,
-                generateAndStoreCandidateScore: wrappedGenerateAndStoreCandidateScore,
+                buildCandidateScoringContext:
+                  wrappedBuildCandidateScoringContext,
+                generateAndStoreCandidateScore:
+                  wrappedGenerateAndStoreCandidateScore,
                 enqueueCandidateScore: wrappedEnqueueCandidateScore,
                 getExtractedTextForUrl,
                 mapStatusToStage,
