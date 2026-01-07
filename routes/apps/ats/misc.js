@@ -276,6 +276,41 @@ router.post("/applications/check-duplicate", async (req, res) => {
 });
 
 // ==================== DEBUG ====================
+// Debug: Check database schema (columns in applications table)
+router.get("/debug/schema", async (req, res) => {
+  try {
+    const dbName = await req.db.query("SELECT current_database() AS db");
+    const schema = DEFAULT_SCHEMA || "public";
+    const tableName = APP_TABLE.includes(".") ? APP_TABLE.split(".")[1] : "applications";
+
+    const { rows: columns } = await req.db.query(
+      `SELECT column_name, data_type, is_nullable, column_default
+       FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name = $2
+       ORDER BY ordinal_position`,
+      [schema, tableName]
+    );
+
+    const hasResumeUrl = columns.some(col => col.column_name === 'resume_url');
+    const hasCoverLetterUrl = columns.some(col => col.column_name === 'cover_letter_url');
+
+    return res.json({
+      database: dbName.rows[0]?.db,
+      tenant: req.tenant?.company_name || 'legacy',
+      schema,
+      table: tableName,
+      fullTableName: APP_TABLE,
+      columns: columns.map(c => c.column_name),
+      columnDetails: columns,
+      hasResumeUrl,
+      hasCoverLetterUrl,
+      migrationNeeded: !hasResumeUrl || !hasCoverLetterUrl,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: "db_error", detail: e.message, stack: e.stack });
+  }
+});
+
 router.get("/debug/candidates/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
