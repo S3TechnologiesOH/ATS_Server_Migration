@@ -50,6 +50,7 @@ const dashboardRouter = require("./dashboard");
 const publicRouter = require("./public");
 const rejectionRouter = require("./rejection");
 const miscRouter = require("./misc");
+const shareRouter = require("./share");
 
 // Import helpers for initialization
 const helpers = require("./helpers");
@@ -69,6 +70,7 @@ router.use("/dashboard", dashboardRouter);
 router.use("/public", publicRouter);
 router.use("/", rejectionRouter); // Rejection routes (/send-rejection-email, /rejection-feedback/*, /public/rejection-feedback/*)
 router.use("/", miscRouter); // Misc routes (/health, /departments, /applicants/*, /debug/*, /candidates/:id/duplicate-applications, etc.)
+router.use("/", shareRouter); // Share routes (/candidates/:id/share/pdf, /candidates/:id/share/email)
 
 /**
  * Initialize routers with dependencies (optional - for dependency injection)
@@ -143,6 +145,15 @@ function initRouters(dependencies = {}) {
     miscRouter.initMisc({
       buildCandidateVM,
       emailService,
+    });
+  }
+
+  // Initialize share router
+  if (shareRouter.initShare) {
+    shareRouter.initShare({
+      buildCandidateVM,
+      getLatestCandidateScore,
+      buildCandidateScoringContext,
     });
   }
 }

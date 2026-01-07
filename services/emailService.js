@@ -965,6 +965,75 @@ class EmailService {
     }
 
     /**
+     * Send email with attachments
+     * @param {Object} options - Email options
+     * @param {string|string[]} options.to - Recipient email address(es)
+     * @param {string} options.subject - Email subject
+     * @param {string} options.html - HTML content
+     * @param {string} options.text - Plain text content (optional)
+     * @param {Array} options.attachments - Array of attachments
+     * @param {string} options.attachments[].filename - File name
+     * @param {Buffer|string} options.attachments[].content - File content as buffer or base64 string
+     * @param {string} options.attachments[].contentType - MIME type (e.g., 'application/pdf')
+     * @returns {Promise<Object>} Send result
+     */
+    async sendMailWithAttachment({ to, subject, html, text, attachments = [] }) {
+        if (!this.isConfigured()) {
+            throw new Error('Email service not configured. Please configure email settings in .env');
+        }
+
+        // Normalize recipients to array
+        const recipients = Array.isArray(to) ? to : [to];
+
+        try {
+            if (this.provider === 'mailgun') {
+                // Mailgun attachment format
+                const mailgunAttachments = attachments.map(att => ({
+                    filename: att.filename,
+                    data: Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content, 'base64')
+                }));
+
+                const messageData = {
+                    from: this.from,
+                    to: recipients,
+                    subject: subject,
+                    html: html,
+                    text: text || this.stripHtml(html),
+                    attachment: mailgunAttachments
+                };
+
+                const response = await this.mailgunClient.messages.create(this.mailgunDomain, messageData);
+                console.log(`[EmailService] Email with attachment sent via Mailgun to ${recipients.join(', ')}: ${response.id}`);
+                return { success: true, messageId: response.id, provider: 'mailgun', sentTo: recipients };
+
+            } else if (this.provider === 'smtp') {
+                // Nodemailer attachment format
+                const nodemailerAttachments = attachments.map(att => ({
+                    filename: att.filename,
+                    content: Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content, 'base64'),
+                    contentType: att.contentType || 'application/octet-stream'
+                }));
+
+                const mailOptions = {
+                    from: this.from,
+                    to: recipients.join(', '),
+                    subject,
+                    html,
+                    text: text || this.stripHtml(html),
+                    attachments: nodemailerAttachments
+                };
+
+                const info = await this.transporter.sendMail(mailOptions);
+                console.log(`[EmailService] Email with attachment sent via SMTP to ${recipients.join(', ')}: ${info.messageId}`);
+                return { success: true, messageId: info.messageId, provider: 'smtp', sentTo: recipients };
+            }
+        } catch (error) {
+            console.error(`[EmailService] Failed to send email with attachment to ${recipients.join(', ')}:`, error);
+            throw error;
+        }
+    }
+
+    /**
      * Strip HTML tags for plain text version
      */
     stripHtml(html) {
