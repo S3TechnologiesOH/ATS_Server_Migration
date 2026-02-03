@@ -15,6 +15,7 @@ const {
   APP_TABLE,
   APP_PK,
   ADMIN_EMAILS,
+  ENV_ADMIN_EMAILS,
   isAdmin,
   requireAdmin,
   ensureAdminTables,
@@ -24,6 +25,8 @@ const {
   saveMentions,
   deleteMentions,
   fetchMentions,
+  getAdminEmails,
+  refreshAdminCache,
 } = require("./helpers");
 
 const dbManager = require("../../../dbManager");
@@ -79,6 +82,165 @@ router.get("/status", async (req, res) => {
     } catch {}
   }
   return res.json(payload);
+});
+
+// ==================== ADMIN USERS MANAGEMENT ====================
+// GET /admin/admin-users - List all admin users (env + database)
+router.get("/admin-users", requireAdmin, async (req, res) => {
+  try {
+    // Refresh cache first
+    await refreshAdminCache(req.db);
+
+    // Get database admins
+    let dbAdmins = [];
+    try {
+      const { rows } = await req.db.query(`
+        SELECT id, email, added_by, added_at, notes
+        FROM ${DEFAULT_SCHEMA}.admin_users
+        ORDER BY email
+      `);
+      dbAdmins = rows;
+    } catch (e) {
+      // Table might not exist yet
+      console.log("[admin-users] Could not query admin_users table:", e.message);
+    }
+
+    // Get env admins (these can't be removed via UI)
+    const envAdmins = ENV_ADMIN_EMAILS.map(email => ({
+      email,
+      source: 'environment',
+      added_by: 'system',
+      added_at: null,
+      notes: 'Configured via ADMIN_EMAILS environment variable'
+    }));
+
+    // Combine and dedupe
+    const allEmails = new Set();
+    const combined = [];
+
+    // Add DB admins first (they have more info)
+    for (const admin of dbAdmins) {
+      const key = admin.email.toLowerCase();
+      if (!allEmails.has(key)) {
+        allEmails.add(key);
+        combined.push({
+          ...admin,
+          source: 'database',
+          is_env_admin: ENV_ADMIN_EMAILS.includes(key)
+        });
+      }
+    }
+
+    // Add env admins that aren't in DB
+    for (const admin of envAdmins) {
+      const key = admin.email.toLowerCase();
+      if (!allEmails.has(key)) {
+        allEmails.add(key);
+        combined.push(admin);
+      }
+    }
+
+    return res.json({
+      admins: combined,
+      total: combined.length,
+      env_count: ENV_ADMIN_EMAILS.length,
+      db_count: dbAdmins.length
+    });
+  } catch (e) {
+    console.error("[admin-users] Error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// POST /admin/admin-users - Add new admin user
+router.post("/admin-users", requireAdmin, async (req, res) => {
+  try {
+    const { email, notes } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ error: "email_required" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const addedBy = getPrimaryEmail(req) || 'unknown';
+
+    // Ensure table exists
+    await req.db.query(`
+      CREATE TABLE IF NOT EXISTS ${DEFAULT_SCHEMA}.admin_users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        added_by VARCHAR(255),
+        added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        notes TEXT,
+        CONSTRAINT admin_users_email_unique UNIQUE (email)
+      )
+    `);
+
+    // Insert the new admin
+    const { rows } = await req.db.query(`
+      INSERT INTO ${DEFAULT_SCHEMA}.admin_users (email, added_by, notes)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (email) DO UPDATE SET
+        notes = COALESCE(EXCLUDED.notes, admin_users.notes),
+        added_by = COALESCE(admin_users.added_by, EXCLUDED.added_by)
+      RETURNING id, email, added_by, added_at, notes
+    `, [normalizedEmail, addedBy, notes || null]);
+
+    // Refresh the cache immediately
+    await refreshAdminCache(req.db);
+
+    return res.status(201).json({
+      success: true,
+      admin: rows[0]
+    });
+  } catch (e) {
+    console.error("[admin-users] Error adding admin:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// DELETE /admin/admin-users/:email - Remove admin user
+router.delete("/admin-users/:email", requireAdmin, async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email).trim().toLowerCase();
+    const currentUserEmail = getPrimaryEmail(req)?.toLowerCase();
+
+    // Prevent removing yourself
+    if (email === currentUserEmail) {
+      return res.status(400).json({ error: "cannot_remove_self", message: "You cannot remove yourself as an admin" });
+    }
+
+    // Check if this is an env-only admin (can't remove those)
+    if (ENV_ADMIN_EMAILS.includes(email)) {
+      // Check if also in database
+      const { rows: existing } = await req.db.query(`
+        SELECT id FROM ${DEFAULT_SCHEMA}.admin_users WHERE LOWER(email) = LOWER($1)
+      `, [email]);
+
+      if (existing.length === 0) {
+        return res.status(400).json({
+          error: "env_admin_cannot_remove",
+          message: "This admin is configured via environment variable and cannot be removed from the UI. Remove from ADMIN_EMAILS env var instead."
+        });
+      }
+    }
+
+    // Delete from database
+    const { rowCount } = await req.db.query(`
+      DELETE FROM ${DEFAULT_SCHEMA}.admin_users WHERE LOWER(email) = LOWER($1)
+    `, [email]);
+
+    // Refresh the cache
+    await refreshAdminCache(req.db);
+
+    if (rowCount === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+
+    return res.json({ success: true, removed: email });
+  } catch (e) {
+    console.error("[admin-users] Error removing admin:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
 });
 
 // ==================== DEPARTMENTS ====================

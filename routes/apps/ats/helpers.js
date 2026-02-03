@@ -70,13 +70,52 @@ const upload = multer({
 });
 
 // --- Admin Config ---
-const ADMIN_EMAILS = (
+// Environment variable admins (fallback/bootstrap)
+const ENV_ADMIN_EMAILS = (
   process.env.ADMIN_EMAILS ||
   "catwell@mys3tech.com,jlowry@mys3tech.com,nlarker@mys3tech.com"
 )
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+
+// Cached admin emails from database (refreshed on demand)
+let cachedDbAdminEmails = null;
+let adminCacheTimestamp = 0;
+const ADMIN_CACHE_TTL_MS = 60000; // 1 minute cache
+
+// Get combined admin emails (env + database)
+function getAdminEmails() {
+  const envSet = new Set(ENV_ADMIN_EMAILS);
+  if (cachedDbAdminEmails) {
+    cachedDbAdminEmails.forEach(e => envSet.add(e.toLowerCase()));
+  }
+  return Array.from(envSet);
+}
+
+// Refresh admin cache from database
+async function refreshAdminCache(db) {
+  try {
+    const { rows } = await db.query(`
+      SELECT LOWER(email) as email FROM ${DEFAULT_SCHEMA}.admin_users
+    `);
+    cachedDbAdminEmails = rows.map(r => r.email);
+    adminCacheTimestamp = Date.now();
+    console.log(`[Admin] Refreshed admin cache: ${cachedDbAdminEmails.length} DB admins + ${ENV_ADMIN_EMAILS.length} env admins`);
+  } catch (e) {
+    // Table might not exist yet, use env only
+    console.log(`[Admin] Could not load DB admins (table may not exist): ${e.message}`);
+    cachedDbAdminEmails = [];
+  }
+}
+
+// Check if cache needs refresh
+function shouldRefreshAdminCache() {
+  return !cachedDbAdminEmails || (Date.now() - adminCacheTimestamp > ADMIN_CACHE_TTL_MS);
+}
+
+// Legacy constant for backward compatibility
+const ADMIN_EMAILS = ENV_ADMIN_EMAILS;
 
 // --- File Helpers ---
 function ensureDir(dir) {
@@ -136,19 +175,30 @@ function isAdmin(req) {
       )
       .filter(Boolean);
     const set = new Set(normalized);
-    const ok = ADMIN_EMAILS.some((a) =>
+
+    // Check against combined env + database admin list
+    const adminEmails = getAdminEmails();
+    const ok = adminEmails.some((a) =>
       set.has(String(a).trim().toLowerCase())
     );
     if (!ok && process.env.ADMIN_DEBUG === "1") {
       console.warn("[ADMIN_DEBUG] isAdmin check failed", {
         sessionEmails: normalized,
-        allowed: ADMIN_EMAILS,
+        allowed: adminEmails,
       });
     }
     return ok;
   } catch {
     return false;
   }
+}
+
+// Async version that refreshes cache if needed
+async function isAdminAsync(req) {
+  if (shouldRefreshAdminCache() && req.db) {
+    await refreshAdminCache(req.db);
+  }
+  return isAdmin(req);
 }
 
 function requireAdmin(req, res, next) {
@@ -343,8 +393,13 @@ module.exports = {
 
   // Admin
   ADMIN_EMAILS,
+  ENV_ADMIN_EMAILS,
   isAdmin,
+  isAdminAsync,
   requireAdmin,
+  getAdminEmails,
+  refreshAdminCache,
+  shouldRefreshAdminCache,
 
   // File helpers
   ensureDir,
