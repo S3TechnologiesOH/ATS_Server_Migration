@@ -1836,6 +1836,45 @@ app.set("io", io);
 io.on("connection", (socket) => {
   if (VERBOSE_APP_DEBUG) console.log("Client connected:", socket.id);
 
+  // --- Chatroom Events ---
+  // Join a chatroom room to receive real-time messages
+  socket.on("chatroom:join", ({ chatroom_id }) => {
+    if (chatroom_id) {
+      socket.join(`chatroom:${chatroom_id}`);
+      if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} joined chatroom:${chatroom_id}`);
+    }
+  });
+
+  // Leave a chatroom room
+  socket.on("chatroom:leave", ({ chatroom_id }) => {
+    if (chatroom_id) {
+      socket.leave(`chatroom:${chatroom_id}`);
+      if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} left chatroom:${chatroom_id}`);
+    }
+  });
+
+  // Typing indicator - broadcast to others in the room
+  socket.on("chatroom:typing:start", ({ chatroom_id, user_email, user_name }) => {
+    if (chatroom_id) {
+      socket.to(`chatroom:${chatroom_id}`).emit("chatroom:typing", {
+        chatroom_id,
+        user_email,
+        user_name,
+        is_typing: true
+      });
+    }
+  });
+
+  socket.on("chatroom:typing:stop", ({ chatroom_id, user_email }) => {
+    if (chatroom_id) {
+      socket.to(`chatroom:${chatroom_id}`).emit("chatroom:typing", {
+        chatroom_id,
+        user_email,
+        is_typing: false
+      });
+    }
+  });
+
   socket.on("disconnect", () => {
     if (VERBOSE_APP_DEBUG) console.log("Client disconnected:", socket.id);
   });

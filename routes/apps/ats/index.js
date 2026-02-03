@@ -9,6 +9,7 @@
  *   /jobs/*          -> jobs.js
  *   /applications/*  -> applications.js
  *   /admin/*         -> admin.js
+ *   /chatrooms/*     -> chatrooms.js (candidate collaboration chatrooms)
  *   /graph/*         -> graph.js (also /meetings, /emails/*)
  *   /reports/*       -> reports.js
  *   /skills/*        -> skills.js
@@ -24,6 +25,7 @@
  *   [x] jobs.js         - Job listings CRUD, AI assist
  *   [x] applications.js - Application management, file uploads, attachments
  *   [x] admin.js        - Admin operations (departments, users, roles, flags, notes, ideas)
+ *   [x] chatrooms.js    - Candidate chatrooms (messages, attachments, note integration)
  *   [x] graph.js        - MS Graph integration (auth, meetings, emails, users, scheduling)
  *   [x] reports.js      - Report generation (pipeline, recruiter, time-to-hire, source)
  *   [x] skills.js       - Skills management, candidate skills
@@ -51,6 +53,7 @@ const publicRouter = require("./public");
 const rejectionRouter = require("./rejection");
 const miscRouter = require("./misc");
 const shareRouter = require("./share");
+const chatroomsRouter = require("./chatrooms");
 
 // Import helpers for initialization
 const helpers = require("./helpers");
@@ -65,6 +68,7 @@ router.use("/candidates", candidatesRouter);
 router.use("/jobs", jobsRouter);
 router.use("/applications", applicationsRouter);
 router.use("/admin", adminRouter);
+router.use("/chatrooms", chatroomsRouter);
 router.use("/", graphRouter); // Graph routes have their own prefixes (/graph/*, /meetings, /emails)
 router.use("/reports", reportsRouter);
 router.use("/skills", skillsRouter);  // Skills CRUD routes (/skills)
