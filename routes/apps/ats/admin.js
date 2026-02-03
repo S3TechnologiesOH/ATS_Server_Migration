@@ -459,7 +459,7 @@ router.get("/departments/:id/notes", requireAdmin, async (req, res) => {
     }
 
     const r = await req.db.query(
-      `SELECT n.id, n.department_id, n.content, n.visibility, n.author_email as created_by, n.created_at, n.updated_at
+      `SELECT n.id, n.department_id, n.content, n.visibility, n.author_email as created_by, n.created_at
        FROM ${DEFAULT_SCHEMA}.department_notes n
        WHERE n.department_id = $1
        ORDER BY n.created_at DESC`,
@@ -494,15 +494,15 @@ router.post("/departments/:id/notes", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "invalid_department_id" });
     }
 
-    const { content, priority, is_pinned } = req.body || {};
+    const { content, visibility } = req.body || {};
     if (!content) return res.status(400).json({ error: "content_required" });
 
-    const createdBy = getPrimaryEmail(req) || "unknown";
+    const authorEmail = getPrimaryEmail(req) || "unknown";
     const r = await req.db.query(
-      `INSERT INTO ${DEFAULT_SCHEMA}.department_notes (department_id, content, priority, is_pinned, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, department_id, content, priority, is_pinned, created_by, created_at, updated_at`,
-      [departmentId, content, priority || "medium", is_pinned || false, createdBy]
+      `INSERT INTO ${DEFAULT_SCHEMA}.department_notes (department_id, content, visibility, author_email)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, department_id, content, visibility, author_email as created_by, created_at`,
+      [departmentId, content, visibility || "shared", authorEmail]
     );
 
     const noteId = r.rows[0].id;
@@ -536,7 +536,7 @@ router.put("/notes/:noteId", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "invalid_note_id" });
     }
 
-    const { content, priority, is_pinned } = req.body || {};
+    const { content, visibility } = req.body || {};
     const updates = [];
     const params = [];
     let paramIndex = 1;
@@ -545,20 +545,14 @@ router.put("/notes/:noteId", requireAdmin, async (req, res) => {
       updates.push(`content = $${paramIndex++}`);
       params.push(content);
     }
-    if (priority !== undefined) {
-      updates.push(`priority = $${paramIndex++}`);
-      params.push(priority);
-    }
-    if (is_pinned !== undefined) {
-      updates.push(`is_pinned = $${paramIndex++}`);
-      params.push(is_pinned);
+    if (visibility !== undefined) {
+      updates.push(`visibility = $${paramIndex++}`);
+      params.push(visibility);
     }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: "no_updates_provided" });
     }
-
-    updates.push(`updated_at = NOW()`);
     params.push(noteId);
 
     const r = await req.db.query(
