@@ -459,10 +459,10 @@ router.get("/departments/:id/notes", requireAdmin, async (req, res) => {
     }
 
     const r = await req.db.query(
-      `SELECT n.id, n.department_id, n.content, n.priority, n.is_pinned, n.created_by, n.created_at, n.updated_at
+      `SELECT n.id, n.department_id, n.content, n.visibility, n.author_email as created_by, n.created_at, n.updated_at
        FROM ${DEFAULT_SCHEMA}.department_notes n
        WHERE n.department_id = $1
-       ORDER BY n.is_pinned DESC, n.created_at DESC`,
+       ORDER BY n.created_at DESC`,
       [departmentId]
     );
 
@@ -655,10 +655,10 @@ router.get("/departments/:id/ideas", requireAdmin, async (req, res) => {
     }
 
     const r = await req.db.query(
-      `SELECT i.id, i.department_id, i.title, i.description, i.status, i.priority, i.category, i.votes, i.created_by, i.created_at, i.updated_at
+      `SELECT i.id, i.department_id, i.title, i.description, i.status, i.created_by, i.created_at, i.updated_at
        FROM ${DEFAULT_SCHEMA}.department_ideas i
        WHERE i.department_id = $1
-       ORDER BY i.votes DESC, i.created_at DESC`,
+       ORDER BY i.created_at DESC`,
       [departmentId]
     );
 
@@ -690,21 +690,19 @@ router.post("/departments/:id/ideas", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "invalid_department_id" });
     }
 
-    const { title, description, status, priority, category } = req.body || {};
+    const { title, description, status } = req.body || {};
     if (!title) return res.status(400).json({ error: "title_required" });
 
     const createdBy = getPrimaryEmail(req) || "unknown";
     const r = await req.db.query(
-      `INSERT INTO ${DEFAULT_SCHEMA}.department_ideas (department_id, title, description, status, priority, category, votes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
-       RETURNING id, department_id, title, description, status, priority, category, votes, created_by, created_at, updated_at`,
+      `INSERT INTO ${DEFAULT_SCHEMA}.department_ideas (department_id, title, description, status, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, department_id, title, description, status, created_by, created_at, updated_at`,
       [
         departmentId,
         title,
         description || null,
-        status || "proposed",
-        priority || "medium",
-        category || null,
+        status || "open",
         createdBy,
       ]
     );
@@ -740,7 +738,7 @@ router.put("/ideas/:ideaId", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "invalid_idea_id" });
     }
 
-    const { title, description, status, priority, category, votes } = req.body || {};
+    const { title, description, status } = req.body || {};
     const updates = [];
     const params = [];
     let paramIndex = 1;
@@ -756,18 +754,6 @@ router.put("/ideas/:ideaId", requireAdmin, async (req, res) => {
     if (status !== undefined) {
       updates.push(`status = $${paramIndex++}`);
       params.push(status);
-    }
-    if (priority !== undefined) {
-      updates.push(`priority = $${paramIndex++}`);
-      params.push(priority);
-    }
-    if (category !== undefined) {
-      updates.push(`category = $${paramIndex++}`);
-      params.push(category);
-    }
-    if (votes !== undefined) {
-      updates.push(`votes = $${paramIndex++}`);
-      params.push(votes);
     }
 
     if (updates.length === 0) {
@@ -815,25 +801,10 @@ router.delete("/ideas/:ideaId", requireAdmin, async (req, res) => {
   }
 });
 
-// POST /admin/ideas/:ideaId/vote - Vote for idea
+// POST /admin/ideas/:ideaId/vote - Vote for idea (disabled - votes column not in schema)
 router.post("/ideas/:ideaId/vote", requireAdmin, async (req, res) => {
-  try {
-    const ideaId = parseInt(req.params.ideaId, 10);
-    if (!Number.isFinite(ideaId)) {
-      return res.status(400).json({ error: "invalid_idea_id" });
-    }
-
-    const r = await req.db.query(
-      `UPDATE ${DEFAULT_SCHEMA}.department_ideas SET votes = votes + 1, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [ideaId]
-    );
-
-    if (!r.rows.length) return res.status(404).json({ error: "not_found" });
-    return res.json(r.rows[0]);
-  } catch (e) {
-    console.error("POST /admin/ideas/:ideaId/vote error:", e);
-    return res.status(500).json({ error: "db_error", detail: e.message });
-  }
+  // Voting feature not currently supported in schema
+  return res.status(501).json({ error: "not_implemented", message: "Voting is not currently supported" });
 });
 
 // POST /admin/ideas/:ideaId/comments - Add comment to idea

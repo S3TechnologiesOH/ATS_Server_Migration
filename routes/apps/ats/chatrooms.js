@@ -329,14 +329,11 @@ router.get("/", async (req, res) => {
 
     const { rows: chatrooms } = await req.db.query(query, params);
 
-    // Get total count
+    // Get total count (exclude LIMIT/OFFSET params which are the last 2)
     const countQuery = `
       SELECT COUNT(*) as total
       FROM ${DEFAULT_SCHEMA}.chatrooms c
-      WHERE ${whereConditions.slice(0, -2).join(" AND ").replace(/\$\d+/g, (m) => {
-        const idx = parseInt(m.slice(1), 10);
-        return idx <= params.length - 2 ? m : '';
-      })}
+      WHERE ${whereConditions.join(" AND ")}
     `;
     const { rows: countRows } = await req.db.query(countQuery, params.slice(0, -2));
     const total = parseInt(countRows[0]?.total || 0, 10);
