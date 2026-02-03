@@ -147,7 +147,7 @@ router.get("/departments/:id/members", requireAdmin, async (req, res) => {
     await ensureAdminTables(req.db);
     const id = parseInt(req.params.id, 10);
     const r = await req.db.query(
-      `SELECT email, role, created_at FROM ${DEFAULT_SCHEMA}.department_members WHERE department_id = $1 ORDER BY email`,
+      `SELECT email, role, access_scope, created_at FROM ${DEFAULT_SCHEMA}.department_members WHERE department_id = $1 ORDER BY email`,
       [id]
     );
     return res.json(r.rows);
@@ -185,6 +185,265 @@ router.delete("/departments/:id/members/:email", requireAdmin, async (req, res) 
     );
     return res.json({ success: true });
   } catch (e) {
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// ==================== JOB-LEVEL ACCESS PERMISSIONS ====================
+// GET /admin/departments/:id/members/:email/access-scope - Get member's access scope
+router.get("/departments/:id/members/:email/access-scope", requireAdmin, async (req, res) => {
+  try {
+    const departmentId = parseInt(req.params.id, 10);
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+
+    const r = await req.db.query(
+      `SELECT access_scope FROM ${DEFAULT_SCHEMA}.department_members
+       WHERE department_id = $1 AND LOWER(email) = $2`,
+      [departmentId, email]
+    );
+
+    if (!r.rows.length) {
+      return res.status(404).json({ error: "member_not_found" });
+    }
+
+    return res.json({ access_scope: r.rows[0].access_scope || 'all' });
+  } catch (e) {
+    console.error("GET /admin/departments/:id/members/:email/access-scope error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /admin/departments/:id/members/:email/access-scope - Set member's access scope
+router.put("/departments/:id/members/:email/access-scope", requireAdmin, async (req, res) => {
+  try {
+    const departmentId = parseInt(req.params.id, 10);
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+    const { access_scope } = req.body || {};
+
+    if (!access_scope || !['all', 'specific_jobs'].includes(access_scope)) {
+      return res.status(400).json({ error: "invalid_access_scope", message: "access_scope must be 'all' or 'specific_jobs'" });
+    }
+
+    const r = await req.db.query(
+      `UPDATE ${DEFAULT_SCHEMA}.department_members
+       SET access_scope = $1
+       WHERE department_id = $2 AND LOWER(email) = $3
+       RETURNING email, role, access_scope`,
+      [access_scope, departmentId, email]
+    );
+
+    if (!r.rows.length) {
+      return res.status(404).json({ error: "member_not_found" });
+    }
+
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("PUT /admin/departments/:id/members/:email/access-scope error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// GET /admin/departments/:id/members/:email/job-access - List jobs member can access
+router.get("/departments/:id/members/:email/job-access", requireAdmin, async (req, res) => {
+  try {
+    const departmentId = parseInt(req.params.id, 10);
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+
+    // Get member's access scope
+    const memberResult = await req.db.query(
+      `SELECT access_scope FROM ${DEFAULT_SCHEMA}.department_members
+       WHERE department_id = $1 AND LOWER(email) = $2`,
+      [departmentId, email]
+    );
+
+    if (!memberResult.rows.length) {
+      return res.status(404).json({ error: "member_not_found" });
+    }
+
+    const accessScope = memberResult.rows[0].access_scope || 'all';
+
+    // Get department name
+    const deptResult = await req.db.query(
+      `SELECT name FROM ${DEFAULT_SCHEMA}.departments WHERE id = $1`,
+      [departmentId]
+    );
+
+    if (!deptResult.rows.length) {
+      return res.status(404).json({ error: "department_not_found" });
+    }
+
+    const departmentName = deptResult.rows[0].name;
+
+    // Get all jobs in this department
+    const jobsResult = await req.db.query(
+      `SELECT jl.job_listing_id, jl.job_title, jl.job_requisition_id, jl.status
+       FROM ${DEFAULT_SCHEMA}.job_listings jl
+       WHERE LOWER(jl.department) = LOWER($1)
+       ORDER BY jl.job_title`,
+      [departmentName]
+    );
+
+    // Get specifically granted job access
+    const accessResult = await req.db.query(
+      `SELECT job_listing_id, granted_by, granted_at
+       FROM ${DEFAULT_SCHEMA}.department_member_job_access
+       WHERE department_id = $1 AND LOWER(member_email) = $2`,
+      [departmentId, email]
+    );
+
+    const grantedJobIds = new Set(accessResult.rows.map(r => r.job_listing_id));
+    const grantedJobsMap = new Map(accessResult.rows.map(r => [r.job_listing_id, r]));
+
+    // Build response with access info for each job
+    const jobs = jobsResult.rows.map(job => ({
+      job_listing_id: job.job_listing_id,
+      job_title: job.job_title,
+      job_requisition_id: job.job_requisition_id,
+      status: job.status,
+      has_access: accessScope === 'all' || grantedJobIds.has(job.job_listing_id),
+      explicitly_granted: grantedJobIds.has(job.job_listing_id),
+      granted_by: grantedJobsMap.get(job.job_listing_id)?.granted_by || null,
+      granted_at: grantedJobsMap.get(job.job_listing_id)?.granted_at || null
+    }));
+
+    return res.json({
+      access_scope: accessScope,
+      department_id: departmentId,
+      department_name: departmentName,
+      member_email: email,
+      jobs
+    });
+  } catch (e) {
+    console.error("GET /admin/departments/:id/members/:email/job-access error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /admin/departments/:id/members/:email/job-access - Set job access (array of job IDs)
+router.put("/departments/:id/members/:email/job-access", requireAdmin, async (req, res) => {
+  try {
+    const departmentId = parseInt(req.params.id, 10);
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+    const grantedBy = getPrimaryEmail(req) || 'admin';
+    const { job_listing_ids, access_scope } = req.body || {};
+
+    // Verify member exists
+    const memberResult = await req.db.query(
+      `SELECT email FROM ${DEFAULT_SCHEMA}.department_members
+       WHERE department_id = $1 AND LOWER(email) = $2`,
+      [departmentId, email]
+    );
+
+    if (!memberResult.rows.length) {
+      return res.status(404).json({ error: "member_not_found" });
+    }
+
+    // Start transaction
+    await req.db.query('BEGIN');
+
+    try {
+      // Update access_scope if provided
+      if (access_scope && ['all', 'specific_jobs'].includes(access_scope)) {
+        await req.db.query(
+          `UPDATE ${DEFAULT_SCHEMA}.department_members
+           SET access_scope = $1
+           WHERE department_id = $2 AND LOWER(email) = $3`,
+          [access_scope, departmentId, email]
+        );
+      }
+
+      // Only update job grants if job_listing_ids is provided
+      if (Array.isArray(job_listing_ids)) {
+        // Remove all existing job access for this member in this department
+        await req.db.query(
+          `DELETE FROM ${DEFAULT_SCHEMA}.department_member_job_access
+           WHERE department_id = $1 AND LOWER(member_email) = $2`,
+          [departmentId, email]
+        );
+
+        // Insert new job access grants
+        if (job_listing_ids.length > 0) {
+          const values = job_listing_ids.map((_, i) =>
+            `($1, $2, $${i + 3}, $${job_listing_ids.length + 3})`
+          ).join(', ');
+
+          await req.db.query(
+            `INSERT INTO ${DEFAULT_SCHEMA}.department_member_job_access
+               (department_id, member_email, job_listing_id, granted_by)
+             VALUES ${values}
+             ON CONFLICT (department_id, member_email, job_listing_id) DO NOTHING`,
+            [departmentId, email, ...job_listing_ids, grantedBy]
+          );
+        }
+      }
+
+      await req.db.query('COMMIT');
+
+      // Return updated job access
+      const accessResult = await req.db.query(
+        `SELECT ja.job_listing_id, ja.granted_by, ja.granted_at, jl.job_title
+         FROM ${DEFAULT_SCHEMA}.department_member_job_access ja
+         JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_listing_id = ja.job_listing_id
+         WHERE ja.department_id = $1 AND LOWER(ja.member_email) = $2
+         ORDER BY jl.job_title`,
+        [departmentId, email]
+      );
+
+      // Get updated access_scope
+      const scopeResult = await req.db.query(
+        `SELECT access_scope FROM ${DEFAULT_SCHEMA}.department_members
+         WHERE department_id = $1 AND LOWER(email) = $2`,
+        [departmentId, email]
+      );
+
+      return res.json({
+        success: true,
+        access_scope: scopeResult.rows[0]?.access_scope || 'all',
+        granted_jobs: accessResult.rows
+      });
+    } catch (err) {
+      await req.db.query('ROLLBACK');
+      throw err;
+    }
+  } catch (e) {
+    console.error("PUT /admin/departments/:id/members/:email/job-access error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// GET /admin/departments/:id/jobs - List all jobs in department (for UI dropdown)
+router.get("/departments/:id/jobs", requireAdmin, async (req, res) => {
+  try {
+    const departmentId = parseInt(req.params.id, 10);
+
+    // Get department name
+    const deptResult = await req.db.query(
+      `SELECT name FROM ${DEFAULT_SCHEMA}.departments WHERE id = $1`,
+      [departmentId]
+    );
+
+    if (!deptResult.rows.length) {
+      return res.status(404).json({ error: "department_not_found" });
+    }
+
+    const departmentName = deptResult.rows[0].name;
+
+    // Get all jobs in this department
+    const jobsResult = await req.db.query(
+      `SELECT job_listing_id, job_title, job_requisition_id, status, hiring_manager, recruiter_assigned
+       FROM ${DEFAULT_SCHEMA}.job_listings
+       WHERE LOWER(department) = LOWER($1)
+       ORDER BY job_title`,
+      [departmentName]
+    );
+
+    return res.json({
+      department_id: departmentId,
+      department_name: departmentName,
+      jobs: jobsResult.rows
+    });
+  } catch (e) {
+    console.error("GET /admin/departments/:id/jobs error:", e);
     return res.status(500).json({ error: "db_error", detail: e.message });
   }
 });

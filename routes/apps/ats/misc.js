@@ -111,28 +111,67 @@ router.get("/departments/:id/members", async (req, res) => {
   }
 });
 
-// Department applicants
+// Department applicants (with job-level access filtering)
 router.get("/departments/:id/applicants", async (req, res) => {
   try {
     await ensureAdminTables(req.db);
     const deptId = parseInt(req.params.id, 10);
+    const userEmail = getPrimaryEmail(req);
+    const admin = isAdmin(req);
+
     // Get department name
     const { rows: deptRows } = await req.db.query(
       `SELECT name FROM ${DEFAULT_SCHEMA}.departments WHERE id = $1`,
       [deptId]
     );
     const deptName = deptRows[0]?.name || "";
-    // Find applications for jobs in that department
-    const sql = `
-      SELECT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
-             a.${APP_PK} as application_id, a.application_date, jl.job_title
-        FROM ${APP_TABLE} a
-        JOIN ${PEOPLE_TABLE} c ON c.${PEOPLE_PK} = a.candidate_id
-        LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
-       WHERE jl.department = $1
-       ORDER BY a.application_date DESC
-       LIMIT 100`;
-    const { rows } = await req.db.query(sql, [deptName]);
+
+    // Build query with job-level access filtering for non-admins
+    let sql;
+    let params;
+
+    if (admin) {
+      // Admins see all applicants
+      sql = `
+        SELECT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
+               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id
+          FROM ${APP_TABLE} a
+          JOIN ${PEOPLE_TABLE} c ON c.${PEOPLE_PK} = a.candidate_id
+          LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+         WHERE jl.department = $1
+         ORDER BY a.application_date DESC
+         LIMIT 100`;
+      params = [deptName];
+    } else {
+      // Non-admins: filter by job access
+      sql = `
+        SELECT DISTINCT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
+               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id
+          FROM ${APP_TABLE} a
+          JOIN ${PEOPLE_TABLE} c ON c.${PEOPLE_PK} = a.candidate_id
+          LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+          LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
+            ON dm.department_id = $2 AND LOWER(dm.email) = LOWER($3)
+         WHERE jl.department = $1
+           AND dm.email IS NOT NULL
+           AND (
+             -- User has 'all' access scope
+             COALESCE(dm.access_scope, 'all') = 'all'
+             OR
+             -- User has specific job access
+             EXISTS (
+               SELECT 1 FROM ${DEFAULT_SCHEMA}.department_member_job_access ja
+               WHERE ja.department_id = $2
+                 AND LOWER(ja.member_email) = LOWER($3)
+                 AND ja.job_listing_id = jl.job_listing_id
+             )
+           )
+         ORDER BY a.application_date DESC
+         LIMIT 100`;
+      params = [deptName, deptId, userEmail];
+    }
+
+    const { rows } = await req.db.query(sql, params);
     return res.json(rows);
   } catch (e) {
     return res.status(500).json({ error: "db_error", detail: e.message });

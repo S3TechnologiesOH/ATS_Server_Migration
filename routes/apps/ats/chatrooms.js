@@ -22,7 +22,10 @@ const {
 // ==================== HELPER FUNCTIONS ====================
 
 /**
- * Check if user has access to a chatroom via department membership
+ * Check if user has access to a chatroom via department membership and job-level permissions
+ * - If chatroom has no department, allow access
+ * - If user is a department member with access_scope='all', allow access
+ * - If user has access_scope='specific_jobs', check if they have access to the job
  */
 async function canAccessChatroom(db, chatroomId, userEmail) {
   if (!userEmail) return false;
@@ -30,11 +33,34 @@ async function canAccessChatroom(db, chatroomId, userEmail) {
   const { rows } = await db.query(`
     SELECT 1 FROM ${DEFAULT_SCHEMA}.chatrooms c
     LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
-      ON dm.department_id = c.department_id
+      ON dm.department_id = c.department_id AND LOWER(dm.email) = LOWER($2)
+    LEFT JOIN ${DEFAULT_SCHEMA}.applications a
+      ON a.${APP_PK} = c.application_id
+    LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl
+      ON jl.job_requisition_id = a.job_requisition_id
     WHERE c.id = $1
       AND (
-        LOWER(dm.email) = LOWER($2)
-        OR c.department_id IS NULL
+        -- Chatroom has no department (open access)
+        c.department_id IS NULL
+        OR (
+          -- User is a department member
+          dm.email IS NOT NULL
+          AND (
+            -- User has 'all' access scope
+            COALESCE(dm.access_scope, 'all') = 'all'
+            OR
+            -- User has specific job access
+            EXISTS (
+              SELECT 1 FROM ${DEFAULT_SCHEMA}.department_member_job_access ja
+              WHERE ja.department_id = c.department_id
+                AND LOWER(ja.member_email) = LOWER($2)
+                AND ja.job_listing_id = jl.job_listing_id
+            )
+            OR
+            -- Chatroom has no associated application/job (allow access for dept members)
+            c.application_id IS NULL
+          )
+        )
       )
     LIMIT 1
   `, [chatroomId, userEmail]);
@@ -234,14 +260,31 @@ router.get("/", async (req, res) => {
       paramIndex++;
     }
 
-    // Non-admins can only see chatrooms for departments they belong to
+    // Non-admins can only see chatrooms based on department membership AND job-level access
     if (!admin && userEmail) {
       whereConditions.push(`(
         c.department_id IS NULL
         OR EXISTS (
           SELECT 1 FROM ${DEFAULT_SCHEMA}.department_members dm
+          LEFT JOIN ${DEFAULT_SCHEMA}.applications a ON a.${APP_PK} = c.application_id
+          LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
           WHERE dm.department_id = c.department_id
-          AND LOWER(dm.email) = LOWER($${paramIndex})
+            AND LOWER(dm.email) = LOWER($${paramIndex})
+            AND (
+              -- User has 'all' access scope
+              COALESCE(dm.access_scope, 'all') = 'all'
+              OR
+              -- User has specific job access
+              EXISTS (
+                SELECT 1 FROM ${DEFAULT_SCHEMA}.department_member_job_access ja
+                WHERE ja.department_id = c.department_id
+                  AND LOWER(ja.member_email) = LOWER($${paramIndex})
+                  AND ja.job_listing_id = jl.job_listing_id
+              )
+              OR
+              -- Chatroom has no associated application/job
+              c.application_id IS NULL
+            )
         )
       )`);
       params.push(userEmail);
@@ -281,7 +324,7 @@ router.get("/", async (req, res) => {
       FROM ${DEFAULT_SCHEMA}.chatrooms c
       WHERE ${whereConditions.join(" AND ")}
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-      LIMIT $${paramIndex - 1} OFFSET $${paramIndex}
+      LIMIT $${params.length - 1} OFFSET $${params.length}
     `;
 
     const { rows: chatrooms } = await req.db.query(query, params);
