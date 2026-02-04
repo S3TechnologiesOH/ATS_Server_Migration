@@ -17,6 +17,7 @@ const {
   requireAdmin,
   getOpenAIClient,
   OPENAI_API_KEY,
+  getPrimaryEmail,
 } = require("./helpers");
 
 // Default titleCase implementation (can be overridden via initCandidates)
@@ -1146,6 +1147,148 @@ router.delete("/:id/permanent", async (req, res) => {
       await req.db.query("ROLLBACK");
     } catch {}
     console.error("DELETE /candidates/:id/permanent error", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// ============================================================================
+// CANDIDATE NOTES ENDPOINTS
+// ============================================================================
+
+const VALID_NOTE_CATEGORIES = ['interview_feedback', 'screening', 'reference_check', 'general'];
+
+// GET /candidates/:id/notes - List all notes for a candidate
+router.get("/:id/notes", async (req, res) => {
+  try {
+    const candidateId = Number(req.params.id);
+    if (!Number.isFinite(candidateId)) {
+      return res.status(400).json({ error: "invalid_candidate_id" });
+    }
+
+    const { category } = req.query;
+    let query = `
+      SELECT id, candidate_id, category, content, author_email, created_at, updated_at
+      FROM ${DEFAULT_SCHEMA}.candidate_notes
+      WHERE candidate_id = $1
+    `;
+    const params = [candidateId];
+
+    if (category && VALID_NOTE_CATEGORIES.includes(category)) {
+      query += ` AND category = $2`;
+      params.push(category);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const { rows } = await req.db.query(query, params);
+    return res.json(rows);
+  } catch (e) {
+    console.error("GET /candidates/:id/notes error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// POST /candidates/:id/notes - Create a new note
+router.post("/:id/notes", async (req, res) => {
+  try {
+    const candidateId = Number(req.params.id);
+    if (!Number.isFinite(candidateId)) {
+      return res.status(400).json({ error: "invalid_candidate_id" });
+    }
+
+    const { content, category } = req.body || {};
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: "content_required" });
+    }
+
+    const noteCategory = VALID_NOTE_CATEGORIES.includes(category) ? category : 'general';
+    const authorEmail = getPrimaryEmail(req) || "unknown";
+
+    const { rows } = await req.db.query(
+      `INSERT INTO ${DEFAULT_SCHEMA}.candidate_notes (candidate_id, category, content, author_email)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, candidate_id, category, content, author_email, created_at, updated_at`,
+      [candidateId, noteCategory, content.trim(), authorEmail]
+    );
+
+    return res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error("POST /candidates/:id/notes error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /candidates/:id/notes/:noteId - Update an existing note
+router.put("/:id/notes/:noteId", async (req, res) => {
+  try {
+    const candidateId = Number(req.params.id);
+    const noteId = Number(req.params.noteId);
+
+    if (!Number.isFinite(candidateId) || !Number.isFinite(noteId)) {
+      return res.status(400).json({ error: "invalid_id" });
+    }
+
+    const { content, category } = req.body || {};
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (content !== undefined && content.trim()) {
+      updates.push(`content = $${paramIndex++}`);
+      params.push(content.trim());
+    }
+    if (category !== undefined && VALID_NOTE_CATEGORIES.includes(category)) {
+      updates.push(`category = $${paramIndex++}`);
+      params.push(category);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "no_updates_provided" });
+    }
+
+    params.push(noteId, candidateId);
+
+    const { rows } = await req.db.query(
+      `UPDATE ${DEFAULT_SCHEMA}.candidate_notes
+       SET ${updates.join(", ")}
+       WHERE id = $${paramIndex++} AND candidate_id = $${paramIndex}
+       RETURNING id, candidate_id, category, content, author_email, created_at, updated_at`,
+      params
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error("PUT /candidates/:id/notes/:noteId error:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// DELETE /candidates/:id/notes/:noteId - Delete a note
+router.delete("/:id/notes/:noteId", async (req, res) => {
+  try {
+    const candidateId = Number(req.params.id);
+    const noteId = Number(req.params.noteId);
+
+    if (!Number.isFinite(candidateId) || !Number.isFinite(noteId)) {
+      return res.status(400).json({ error: "invalid_id" });
+    }
+
+    const { rows } = await req.db.query(
+      `DELETE FROM ${DEFAULT_SCHEMA}.candidate_notes
+       WHERE id = $1 AND candidate_id = $2
+       RETURNING id`,
+      [noteId, candidateId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("DELETE /candidates/:id/notes/:noteId error:", e);
     return res.status(500).json({ error: "db_error", detail: e.message });
   }
 });

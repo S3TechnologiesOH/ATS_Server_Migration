@@ -303,6 +303,10 @@ router.get("/", async (req, res) => {
           WHERE m.chatroom_id = c.id AND m.deleted_at IS NULL
         ) as actual_message_count,
         (
+          SELECT COUNT(*) FROM ${DEFAULT_SCHEMA}.chatroom_messages m
+          WHERE m.chatroom_id = c.id AND m.deleted_at IS NULL AND m.is_urgent = true
+        ) as urgent_count,
+        (
           SELECT json_agg(json_build_object(
             'type', ca.attachment_type,
             'file_name', ca.file_name,
