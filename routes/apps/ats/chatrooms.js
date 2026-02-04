@@ -951,22 +951,20 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
       cover_letter_url: chatroom.cover_letter_url || null
     };
 
-    // Get any upcoming interviews/meetings (from application_stages with interview status)
+    // Get interview status (from application_stages with interview-related status)
     let interview = null;
     if (applicationId) {
       const { rows: interviews } = await req.db.query(`
-        SELECT status, scheduled_at, updated_at
+        SELECT status, updated_at
         FROM ${DEFAULT_SCHEMA}.application_stages
         WHERE application_id = $1
           AND LOWER(status) LIKE '%interview%'
-          AND (scheduled_at IS NULL OR scheduled_at >= NOW() - INTERVAL '1 day')
-        ORDER BY COALESCE(scheduled_at, updated_at) DESC
+        ORDER BY updated_at DESC NULLS LAST
         LIMIT 1
       `, [applicationId]);
       if (interviews.length) {
         interview = {
           status: interviews[0].status,
-          scheduled_at: interviews[0].scheduled_at,
           updated_at: interviews[0].updated_at
         };
       }
