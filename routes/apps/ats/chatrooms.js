@@ -1020,13 +1020,11 @@ router.post("/:id/share/pdf", requireChatroomAccess, async (req, res) => {
 
     // Build messages query with optional date filter
     let messagesQuery = `
-      SELECT m.*, dm.display_name as author_name
+      SELECT m.*
       FROM ${DEFAULT_SCHEMA}.chatroom_messages m
-      LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
-        ON LOWER(dm.email) = LOWER(m.author_email) AND dm.department_id = $2
       WHERE m.chatroom_id = $1
     `;
-    const queryParams = [chatroomId, chatroom.department_id];
+    const queryParams = [chatroomId];
 
     if (startDate) {
       queryParams.push(startDate);
@@ -1117,13 +1115,11 @@ router.post("/:id/share/email", requireChatroomAccess, async (req, res) => {
 
     // Build messages query with optional date filter
     let messagesQuery = `
-      SELECT m.*, dm.display_name as author_name
+      SELECT m.*
       FROM ${DEFAULT_SCHEMA}.chatroom_messages m
-      LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
-        ON LOWER(dm.email) = LOWER(m.author_email) AND dm.department_id = $2
       WHERE m.chatroom_id = $1
     `;
-    const queryParams = [chatroomId, chatroom.department_id];
+    const queryParams = [chatroomId];
 
     if (startDate) {
       queryParams.push(startDate);
