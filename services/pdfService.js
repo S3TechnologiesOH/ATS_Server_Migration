@@ -503,7 +503,264 @@ async function generateCandidateProfilePDF(data, branding, options = {}) {
   });
 }
 
+/**
+ * Generate chatroom transcript PDF
+ *
+ * @param {Object} data - Transcript data
+ * @param {Object} data.chatroom - Chatroom info
+ * @param {Object} data.candidate - Candidate info
+ * @param {Array} data.messages - Array of messages
+ * @param {Object} branding - Tenant branding
+ * @param {Object} options - What to include
+ * @returns {Promise<Buffer>} PDF as buffer
+ */
+async function generateChatroomTranscriptPDF(data, branding, options = {}) {
+  const { chatroom, candidate, messages = [] } = data;
+
+  const {
+    companyName = "Company",
+    logoUrl = null,
+    primaryColor = "#2d5a27",
+  } = branding || {};
+
+  const {
+    includeTimestamps = true,
+    includeAuthors = true,
+    includeCandidateHeader = true,
+    includeNoteMentions = true,
+  } = options;
+
+  // Create PDF document
+  const doc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 50, bottom: 60, left: 50, right: 50 },
+    bufferPages: true,
+  });
+
+  // Collect PDF data into buffer
+  const chunks = [];
+  doc.on("data", (chunk) => chunks.push(chunk));
+
+  const primaryRgb = hexToRgb(primaryColor);
+  const darkRgb = darkenColor(primaryColor, 30);
+
+  // Fetch logo if available
+  let logoBuffer = null;
+  if (logoUrl) {
+    logoBuffer = await fetchImageBuffer(logoUrl);
+  }
+
+  // ==================== HEADER ====================
+  const headerY = 40;
+
+  // Logo (left side)
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, 50, headerY, { height: 40 });
+    } catch (e) {
+      console.warn("[PDFService] Failed to embed logo:", e.message);
+    }
+  }
+
+  // Company name (right side)
+  doc
+    .fontSize(16)
+    .fillColor(primaryRgb)
+    .text(companyName.toUpperCase(), 300, headerY + 10, {
+      align: "right",
+      width: 245,
+    });
+
+  // Header line
+  doc
+    .moveTo(50, headerY + 50)
+    .lineTo(562, headerY + 50)
+    .strokeColor(primaryRgb)
+    .lineWidth(2)
+    .stroke();
+
+  // ==================== TITLE ====================
+  let currentY = headerY + 70;
+
+  doc
+    .fontSize(20)
+    .fillColor(darkRgb)
+    .text("CHATROOM TRANSCRIPT", 50, currentY, { align: "center" });
+
+  currentY += 35;
+
+  // ==================== CANDIDATE HEADER ====================
+  if (includeCandidateHeader && candidate) {
+    doc
+      .fontSize(14)
+      .fillColor(primaryRgb)
+      .text("CANDIDATE INFORMATION", 50, currentY);
+
+    currentY += 5;
+    doc
+      .moveTo(50, currentY + 15)
+      .lineTo(250, currentY + 15)
+      .strokeColor("#d1d5db")
+      .lineWidth(1)
+      .stroke();
+
+    currentY += 25;
+
+    const candidateInfo = [
+      { label: "Name", value: candidate.name || "N/A" },
+      { label: "Email", value: candidate.email || "N/A" },
+      { label: "Position", value: candidate.job_title || "N/A" },
+    ];
+
+    candidateInfo.forEach((item) => {
+      doc.fontSize(10).fillColor("#6b7280").text(item.label + ":", 50, currentY);
+      doc.fontSize(10).fillColor("#1f2937").text(item.value, 130, currentY);
+      currentY += 18;
+    });
+
+    currentY += 15;
+  }
+
+  // ==================== CHATROOM INFO ====================
+  doc.fontSize(14).fillColor(primaryRgb).text("CONVERSATION", 50, currentY);
+
+  currentY += 5;
+  doc
+    .moveTo(50, currentY + 15)
+    .lineTo(200, currentY + 15)
+    .strokeColor("#d1d5db")
+    .lineWidth(1)
+    .stroke();
+
+  currentY += 25;
+
+  // Chatroom name and date range
+  doc
+    .fontSize(10)
+    .fillColor("#6b7280")
+    .text(`Chatroom: ${chatroom?.display_name || "Unknown"}`, 50, currentY);
+  currentY += 16;
+  doc
+    .fontSize(10)
+    .fillColor("#6b7280")
+    .text(`Total Messages: ${messages.length}`, 50, currentY);
+  currentY += 25;
+
+  // ==================== MESSAGES ====================
+  if (messages.length === 0) {
+    doc
+      .fontSize(11)
+      .fillColor("#9ca3af")
+      .text("No messages in the selected date range.", 50, currentY);
+    currentY += 30;
+  } else {
+    for (const msg of messages) {
+      // Check if we need a new page
+      if (currentY > 680) {
+        doc.addPage();
+        currentY = 50;
+      }
+
+      // Message header (author + timestamp)
+      let headerText = "";
+      if (includeAuthors && msg.author_name) {
+        headerText += msg.author_name;
+      }
+      if (includeTimestamps && msg.created_at) {
+        const dateStr = new Date(msg.created_at).toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+        headerText += headerText ? ` - ${dateStr}` : dateStr;
+      }
+
+      if (headerText) {
+        doc
+          .fontSize(9)
+          .fillColor(primaryRgb)
+          .text(headerText, 50, currentY, { width: 512 });
+        currentY += 14;
+      }
+
+      // Message content
+      let content = msg.content || "";
+
+      // Process @note mentions if needed
+      if (!includeNoteMentions) {
+        content = content.replace(/@note:\d+/g, "[note reference]");
+      }
+
+      // Draw message box
+      const contentHeight = doc.heightOfString(content, {
+        width: 492,
+        fontSize: 10,
+      });
+
+      // Background box
+      doc
+        .rect(50, currentY - 2, 512, contentHeight + 12)
+        .fill("#f9fafb");
+
+      // Left border accent
+      doc
+        .rect(50, currentY - 2, 3, contentHeight + 12)
+        .fill(msg.is_system ? "#9ca3af" : primaryRgb);
+
+      // Message text
+      doc
+        .fontSize(10)
+        .fillColor("#374151")
+        .text(content, 60, currentY + 4, {
+          width: 492,
+          lineGap: 2,
+        });
+
+      currentY = doc.y + 15;
+    }
+  }
+
+  // ==================== FOOTER ====================
+  const pageCount = doc.bufferedPageRange().count;
+
+  for (let i = 0; i < pageCount; i++) {
+    doc.switchToPage(i);
+
+    // Footer line
+    doc
+      .moveTo(50, 730)
+      .lineTo(562, 730)
+      .strokeColor("#d1d5db")
+      .lineWidth(0.5)
+      .stroke();
+
+    // Footer text
+    doc
+      .fontSize(8)
+      .fillColor("#9ca3af")
+      .text(`Generated: ${new Date().toLocaleDateString()}`, 50, 738, {
+        continued: true,
+      })
+      .text(` | Page ${i + 1} of ${pageCount}`, { continued: true })
+      .text(" | CONFIDENTIAL", { align: "right" });
+  }
+
+  // Finalize PDF
+  doc.end();
+
+  // Wait for PDF to finish and return buffer
+  return new Promise((resolve, reject) => {
+    doc.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+    doc.on("error", reject);
+  });
+}
+
 module.exports = {
   generateCandidateProfilePDF,
+  generateChatroomTranscriptPDF,
   fetchImageBuffer,
 };

@@ -990,6 +990,234 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
   }
 });
 
+// ==================== TRANSCRIPT SHARING ====================
+
+const { generateChatroomTranscriptPDF } = require("../../../services/pdfService");
+const emailService = require("../../../services/emailService");
+
+// POST /chatrooms/:id/share/pdf - Generate transcript PDF
+router.post("/:id/share/pdf", requireChatroomAccess, async (req, res) => {
+  try {
+    const chatroomId = parseInt(req.params.id, 10);
+    const { options = {}, startDate, endDate } = req.body;
+
+    // Get chatroom with candidate info
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT c.*, cand.first_name, cand.last_name, cand.email as candidate_email,
+             jl.job_title
+      FROM ${DEFAULT_SCHEMA}.chatrooms c
+      LEFT JOIN ${PEOPLE_TABLE} cand ON cand.${PEOPLE_PK} = c.candidate_id
+      LEFT JOIN ${APP_TABLE} a ON a.${APP_PK} = c.application_id
+      LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+      WHERE c.id = $1
+    `, [chatroomId]);
+
+    if (!chatrooms.length) {
+      return res.status(404).json({ error: "chatroom_not_found" });
+    }
+
+    const chatroom = chatrooms[0];
+
+    // Build messages query with optional date filter
+    let messagesQuery = `
+      SELECT m.*, dm.display_name as author_name
+      FROM ${DEFAULT_SCHEMA}.chatroom_messages m
+      LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
+        ON LOWER(dm.email) = LOWER(m.author_email) AND dm.department_id = $2
+      WHERE m.chatroom_id = $1
+    `;
+    const queryParams = [chatroomId, chatroom.department_id];
+
+    if (startDate) {
+      queryParams.push(startDate);
+      messagesQuery += ` AND m.created_at >= $${queryParams.length}`;
+    }
+    if (endDate) {
+      queryParams.push(endDate);
+      messagesQuery += ` AND m.created_at <= $${queryParams.length}`;
+    }
+
+    messagesQuery += ` ORDER BY m.created_at ASC`;
+
+    const { rows: messages } = await req.db.query(messagesQuery, queryParams);
+
+    // Get tenant branding
+    let branding = { companyName: "Company", primaryColor: "#2d5a27" };
+    try {
+      const { rows: brandingRows } = await req.db.query(`
+        SELECT * FROM ${DEFAULT_SCHEMA}.tenant_branding LIMIT 1
+      `);
+      if (brandingRows.length) {
+        branding = {
+          companyName: brandingRows[0].company_name || "Company",
+          logoUrl: brandingRows[0].logo_url,
+          primaryColor: brandingRows[0].primary_color || "#2d5a27",
+        };
+      }
+    } catch (e) {
+      console.warn("Could not fetch branding:", e.message);
+    }
+
+    // Build candidate info for PDF
+    const candidate = {
+      name: [chatroom.first_name, chatroom.last_name].filter(Boolean).join(" ") || "Unknown",
+      email: chatroom.candidate_email,
+      job_title: chatroom.job_title,
+    };
+
+    // Generate PDF
+    const pdfBuffer = await generateChatroomTranscriptPDF(
+      { chatroom, candidate, messages },
+      branding,
+      options
+    );
+
+    // Generate filename
+    const candidateName = candidate.name.replace(/[^a-zA-Z0-9]/g, "_");
+    const dateStr = new Date().toISOString().split("T")[0];
+    const filename = `transcript_${candidateName}_${dateStr}.pdf`;
+
+    return res.json({
+      success: true,
+      pdf: pdfBuffer.toString("base64"),
+      filename,
+    });
+  } catch (e) {
+    console.error("Error generating transcript PDF:", e);
+    return res.status(500).json({ error: "pdf_error", detail: e.message });
+  }
+});
+
+// POST /chatrooms/:id/share/email - Email transcript
+router.post("/:id/share/email", requireChatroomAccess, async (req, res) => {
+  try {
+    const chatroomId = parseInt(req.params.id, 10);
+    const { recipients, subject, message, options = {}, startDate, endDate } = req.body;
+
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ error: "recipients_required" });
+    }
+
+    // Get chatroom with candidate info
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT c.*, cand.first_name, cand.last_name, cand.email as candidate_email,
+             jl.job_title
+      FROM ${DEFAULT_SCHEMA}.chatrooms c
+      LEFT JOIN ${PEOPLE_TABLE} cand ON cand.${PEOPLE_PK} = c.candidate_id
+      LEFT JOIN ${APP_TABLE} a ON a.${APP_PK} = c.application_id
+      LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+      WHERE c.id = $1
+    `, [chatroomId]);
+
+    if (!chatrooms.length) {
+      return res.status(404).json({ error: "chatroom_not_found" });
+    }
+
+    const chatroom = chatrooms[0];
+
+    // Build messages query with optional date filter
+    let messagesQuery = `
+      SELECT m.*, dm.display_name as author_name
+      FROM ${DEFAULT_SCHEMA}.chatroom_messages m
+      LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
+        ON LOWER(dm.email) = LOWER(m.author_email) AND dm.department_id = $2
+      WHERE m.chatroom_id = $1
+    `;
+    const queryParams = [chatroomId, chatroom.department_id];
+
+    if (startDate) {
+      queryParams.push(startDate);
+      messagesQuery += ` AND m.created_at >= $${queryParams.length}`;
+    }
+    if (endDate) {
+      queryParams.push(endDate);
+      messagesQuery += ` AND m.created_at <= $${queryParams.length}`;
+    }
+
+    messagesQuery += ` ORDER BY m.created_at ASC`;
+
+    const { rows: messages } = await req.db.query(messagesQuery, queryParams);
+
+    // Get tenant branding
+    let branding = { companyName: "Company", primaryColor: "#2d5a27" };
+    try {
+      const { rows: brandingRows } = await req.db.query(`
+        SELECT * FROM ${DEFAULT_SCHEMA}.tenant_branding LIMIT 1
+      `);
+      if (brandingRows.length) {
+        branding = {
+          companyName: brandingRows[0].company_name || "Company",
+          logoUrl: brandingRows[0].logo_url,
+          primaryColor: brandingRows[0].primary_color || "#2d5a27",
+        };
+      }
+    } catch (e) {
+      console.warn("Could not fetch branding:", e.message);
+    }
+
+    // Build candidate info for PDF
+    const candidate = {
+      name: [chatroom.first_name, chatroom.last_name].filter(Boolean).join(" ") || "Unknown",
+      email: chatroom.candidate_email,
+      job_title: chatroom.job_title,
+    };
+
+    // Generate PDF
+    const pdfBuffer = await generateChatroomTranscriptPDF(
+      { chatroom, candidate, messages },
+      branding,
+      options
+    );
+
+    // Generate filename
+    const candidateName = candidate.name.replace(/[^a-zA-Z0-9]/g, "_");
+    const dateStr = new Date().toISOString().split("T")[0];
+    const filename = `transcript_${candidateName}_${dateStr}.pdf`;
+
+    // Send email with PDF attachment
+    const senderEmail = getPrimaryEmail(req);
+    const emailSubject = subject || `Chatroom Transcript: ${candidate.name}`;
+    const emailBody = message
+      ? `${message}\n\n---\nPlease find the chatroom transcript attached.`
+      : `Please find the chatroom transcript for ${candidate.name} attached.\n\nThis transcript was shared from the ${branding.companyName} Applicant Tracking System.`;
+
+    // Send to each recipient
+    const sendPromises = recipients.map((recipient) =>
+      emailService.sendMailWithAttachment({
+        to: recipient,
+        subject: emailSubject,
+        html: `<p>${emailBody.replace(/\n/g, "<br>")}</p>`,
+        text: emailBody,
+        attachments: [{
+          content: pdfBuffer,
+          filename,
+          contentType: "application/pdf",
+        }],
+      }).catch((err) => ({ error: err.message, recipient }))
+    );
+
+    const results = await Promise.all(sendPromises);
+    const failures = results.filter((r) => r && r.error);
+
+    if (failures.length === recipients.length) {
+      return res.status(500).json({
+        error: "email_failed",
+        detail: "Failed to send to all recipients",
+        failures,
+      });
+    }
+
+    return res.json({
+      success: true,
+      sent: recipients.length - failures.length,
+      failures: failures.length > 0 ? failures : undefined,
+    });
+  } catch (e) {
+    console.error("Error emailing transcript:", e);
+    return res.status(500).json({ error: "email_error", detail: e.message });
+  }
+});
+
 // ==================== NOTES INTEGRATION ====================
 
 // GET /chatrooms/:id/searchable-notes - Get notes for @mention autocomplete
