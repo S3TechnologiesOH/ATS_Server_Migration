@@ -295,7 +295,10 @@ router.get("/", async (req, res) => {
         `(jl.department IS NOT NULL AND LOWER(TRIM(jl.department)) = LOWER(TRIM($${paramsB.length})))`
       );
     }
-    if (filters.stage && filters.stage !== "all") {
+    if (!filters.stage || filters.stage === "all") {
+      // Exclude on_hold from "All" view - they're only visible via On Hold filter
+      whereB.push(`(COALESCE(LOWER(ls.stage_name), '') != 'on_hold')`);
+    } else {
       paramsB.push(String(filters.stage).toLowerCase());
       whereB.push(
         `(LOWER(ls.stage_name) = $${paramsB.length} OR LOWER(ls.status) = $${paramsB.length})`
