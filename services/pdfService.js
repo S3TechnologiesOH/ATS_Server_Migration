@@ -759,8 +759,291 @@ async function generateChatroomTranscriptPDF(data, branding, options = {}) {
   });
 }
 
+/**
+ * Generate AI Summary PDF
+ *
+ * @param {Object} data - Summary data
+ * @param {Object} data.summary - AI-generated summary object
+ * @param {Object} data.candidate - Candidate info (name, email, job_title)
+ * @param {Object} data.chatroom - Chatroom info (display_name)
+ * @param {Object} data.dateRange - Date range covered { label }
+ * @param {Object} branding - Tenant branding
+ * @returns {Promise<Buffer>} PDF as buffer
+ */
+async function generateAISummaryPDF(data, branding) {
+  const { summary, candidate, chatroom, dateRange } = data;
+
+  const {
+    companyName = "Company",
+    logoUrl = null,
+    primaryColor = "#2d5a27",
+  } = branding || {};
+
+  const doc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 50, bottom: 60, left: 50, right: 50 },
+    bufferPages: true,
+  });
+
+  const chunks = [];
+  doc.on("data", (chunk) => chunks.push(chunk));
+
+  const primaryRgb = hexToRgb(primaryColor);
+  const darkRgb = darkenColor(primaryColor, 30);
+
+  // Fetch logo if available
+  let logoBuffer = null;
+  if (logoUrl) {
+    logoBuffer = await fetchImageBuffer(logoUrl);
+  }
+
+  // ==================== HEADER ====================
+  const headerY = 40;
+
+  // Logo (left side)
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, 50, headerY, { height: 40 });
+    } catch (e) {
+      console.warn("[PDFService] Failed to embed logo:", e.message);
+    }
+  }
+
+  // Company name (right side)
+  doc
+    .fontSize(16)
+    .fillColor(primaryRgb)
+    .text(companyName.toUpperCase(), 300, headerY + 10, {
+      align: "right",
+      width: 245,
+    });
+
+  // Header line
+  doc
+    .moveTo(50, headerY + 50)
+    .lineTo(562, headerY + 50)
+    .strokeColor(primaryRgb)
+    .lineWidth(2)
+    .stroke();
+
+  // ==================== TITLE ====================
+  let currentY = headerY + 70;
+
+  doc
+    .fontSize(20)
+    .fillColor(darkRgb)
+    .text("CONVERSATION SUMMARY", 50, currentY, { align: "center" });
+
+  currentY += 35;
+
+  // ==================== CANDIDATE OVERVIEW ====================
+  doc.fontSize(14).fillColor(primaryRgb).text("CANDIDATE OVERVIEW", 50, currentY);
+  currentY += 5;
+  doc
+    .moveTo(50, currentY + 15)
+    .lineTo(250, currentY + 15)
+    .strokeColor("#d1d5db")
+    .lineWidth(1)
+    .stroke();
+  currentY += 25;
+
+  const candidateInfo = [
+    { label: "Name", value: candidate?.name || "N/A" },
+    { label: "Position", value: candidate?.job_title || "N/A" },
+    { label: "Period Covered", value: dateRange?.label || "All messages" },
+    { label: "Messages Analyzed", value: String(summary?.messageCount || 0) },
+    { label: "Participants", value: String(summary?.participantCount || 0) },
+  ];
+
+  candidateInfo.forEach((item) => {
+    doc.fontSize(10).fillColor("#6b7280").text(item.label + ":", 50, currentY);
+    doc.fontSize(10).fillColor("#1f2937").text(item.value, 160, currentY);
+    currentY += 16;
+  });
+  currentY += 15;
+
+  // ==================== SENTIMENT INDICATOR ====================
+  const sentimentColors = {
+    positive: "#059669",
+    neutral: "#6b7280",
+    mixed: "#f59e0b",
+    concerns: "#ef4444",
+  };
+  const sentimentLabels = {
+    positive: "Positive",
+    neutral: "Neutral",
+    mixed: "Mixed Feedback",
+    concerns: "Areas of Concern",
+  };
+
+  doc.fontSize(12).fillColor("#1f2937").text("Overall Sentiment:", 50, currentY);
+  const sentimentColor = sentimentColors[summary?.overallSentiment] || "#6b7280";
+  const sentimentLabel = sentimentLabels[summary?.overallSentiment] || "Neutral";
+  doc.fontSize(12).fillColor(sentimentColor).text(sentimentLabel, 170, currentY);
+  currentY += 30;
+
+  // ==================== KEY DISCUSSION POINTS ====================
+  if (summary?.keyDiscussionPoints?.length > 0) {
+    if (currentY > 600) {
+      doc.addPage();
+      currentY = 50;
+    }
+    doc.fontSize(14).fillColor(primaryRgb).text("KEY DISCUSSION POINTS", 50, currentY);
+    currentY += 20;
+
+    summary.keyDiscussionPoints.forEach((point) => {
+      const textHeight = doc.heightOfString("- " + point, { width: 490 });
+      if (currentY + textHeight > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+      doc.fontSize(10).fillColor("#374151").text("- " + point, 60, currentY, { width: 490 });
+      currentY = doc.y + 8;
+    });
+    currentY += 15;
+  }
+
+  // ==================== DECISIONS MADE ====================
+  if (summary?.decisionsMade?.length > 0) {
+    if (currentY > 600) {
+      doc.addPage();
+      currentY = 50;
+    }
+    doc.fontSize(14).fillColor(primaryRgb).text("DECISIONS MADE", 50, currentY);
+    currentY += 20;
+
+    summary.decisionsMade.forEach((decision) => {
+      const textHeight = doc.heightOfString("+ " + decision, { width: 490 });
+      if (currentY + textHeight > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+      doc.fontSize(10).fillColor("#374151").text("+ " + decision, 60, currentY, { width: 490 });
+      currentY = doc.y + 8;
+    });
+    currentY += 15;
+  }
+
+  // ==================== ACTION ITEMS ====================
+  if (summary?.actionItems?.length > 0) {
+    if (currentY > 600) {
+      doc.addPage();
+      currentY = 50;
+    }
+    doc.fontSize(14).fillColor(primaryRgb).text("ACTION ITEMS", 50, currentY);
+    currentY += 20;
+
+    summary.actionItems.forEach((item) => {
+      const taskText = item.task || item;
+      const ownerText = item.owner && item.owner !== "Unspecified" ? item.owner : null;
+      const textHeight = doc.heightOfString("[ ] " + taskText, { width: 480 });
+      if (currentY + textHeight + 15 > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+      doc.fontSize(10).fillColor("#374151").text("[ ] " + taskText, 60, currentY, { width: 480 });
+      if (ownerText) {
+        currentY = doc.y + 2;
+        doc.fontSize(9).fillColor("#6b7280").text("    Owner: " + ownerText, 60, currentY);
+      }
+      currentY = doc.y + 10;
+    });
+    currentY += 15;
+  }
+
+  // ==================== PARTICIPANT INSIGHTS ====================
+  if (summary?.participantInsights?.length > 0) {
+    if (currentY > 550) {
+      doc.addPage();
+      currentY = 50;
+    }
+    doc.fontSize(14).fillColor(primaryRgb).text("PARTICIPANT INSIGHTS", 50, currentY);
+    currentY += 20;
+
+    summary.participantInsights.forEach((insight) => {
+      const participant = insight.participant || "Unknown";
+      const text = insight.insight || insight;
+      const textHeight = doc.heightOfString(text, { width: 480 });
+      if (currentY + textHeight + 20 > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+      doc.fontSize(10).fillColor(darkRgb).text(participant + ":", 60, currentY);
+      currentY = doc.y + 2;
+      doc.fontSize(10).fillColor("#374151").text(text, 70, currentY, { width: 480 });
+      currentY = doc.y + 10;
+    });
+    currentY += 15;
+  }
+
+  // ==================== NOTABLE QUOTES ====================
+  if (summary?.notableQuotes?.length > 0) {
+    if (currentY > 550) {
+      doc.addPage();
+      currentY = 50;
+    }
+    doc.fontSize(14).fillColor(primaryRgb).text("NOTABLE QUOTES", 50, currentY);
+    currentY += 20;
+
+    summary.notableQuotes.forEach((q) => {
+      const quote = q.quote || q;
+      const author = q.author || "Unknown";
+      const quoteHeight = doc.heightOfString('"' + quote + '"', { width: 470 });
+      if (currentY + quoteHeight + 30 > 700) {
+        doc.addPage();
+        currentY = 50;
+      }
+
+      // Quote background box
+      doc.rect(55, currentY - 2, 500, quoteHeight + 20).fill("#f9fafb");
+      // Left accent bar
+      doc.rect(55, currentY - 2, 3, quoteHeight + 20).fill(primaryRgb);
+
+      doc
+        .fontSize(10)
+        .fillColor("#374151")
+        .text('"' + quote + '"', 65, currentY + 5, { width: 470 });
+      currentY = doc.y + 5;
+      doc.fontSize(9).fillColor("#6b7280").text("- " + author, 65, currentY);
+      currentY = doc.y + 15;
+    });
+  }
+
+  // ==================== FOOTER ====================
+  const pageCount = doc.bufferedPageRange().count;
+  for (let i = 0; i < pageCount; i++) {
+    doc.switchToPage(i);
+    doc
+      .moveTo(50, 730)
+      .lineTo(562, 730)
+      .strokeColor("#d1d5db")
+      .lineWidth(0.5)
+      .stroke();
+    doc
+      .fontSize(8)
+      .fillColor("#9ca3af")
+      .text(
+        `Generated: ${new Date().toLocaleDateString()} | AI Summary | Page ${i + 1} of ${pageCount} | CONFIDENTIAL`,
+        50,
+        738,
+        { align: "center", width: 512 }
+      );
+  }
+
+  // Finalize PDF
+  doc.end();
+
+  return new Promise((resolve, reject) => {
+    doc.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+    doc.on("error", reject);
+  });
+}
+
 module.exports = {
   generateCandidateProfilePDF,
   generateChatroomTranscriptPDF,
+  generateAISummaryPDF,
   fetchImageBuffer,
 };
