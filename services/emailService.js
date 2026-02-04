@@ -1034,6 +1034,128 @@ class EmailService {
     }
 
     /**
+     * Send mention notification email (single mention)
+     * @param {Object} options - Notification options
+     * @param {string} options.to - Recipient email
+     * @param {string} options.mentionedByName - Name of person who mentioned
+     * @param {string} options.chatroomName - Name of the chatroom
+     * @param {string} options.messagePreview - Preview of the message content
+     * @param {string} options.chatroomUrl - URL to view the chatroom
+     * @returns {Promise<Object>} Send result
+     */
+    async sendMentionNotification({ to, mentionedByName, chatroomName, messagePreview, chatroomUrl }) {
+        const subject = `${mentionedByName} mentioned you in ${chatroomName}`;
+        const html = this.generateMentionNotificationHtml({
+            mentions: [{
+                mentionedByName,
+                chatroomName,
+                messagePreview,
+                chatroomUrl
+            }],
+            isBatched: false
+        });
+
+        return this.sendMail({ to, subject, html });
+    }
+
+    /**
+     * Send batched mention notification email (multiple mentions)
+     * @param {Object} options - Notification options
+     * @param {string} options.to - Recipient email
+     * @param {Array} options.mentions - Array of mention objects
+     * @returns {Promise<Object>} Send result
+     */
+    async sendBatchedMentionNotification({ to, mentions }) {
+        const count = mentions.length;
+        const subject = count === 1
+            ? `${mentions[0].mentionedByName} mentioned you in ${mentions[0].chatroomName}`
+            : `You have ${count} new mentions in Power HR`;
+
+        const html = this.generateMentionNotificationHtml({
+            mentions,
+            isBatched: count > 1
+        });
+
+        return this.sendMail({ to, subject, html });
+    }
+
+    /**
+     * Generate HTML for mention notification email
+     */
+    generateMentionNotificationHtml({ mentions, isBatched }) {
+        const baseUrl = process.env.API_BASE_URL || 'https://ats.s3protection.com';
+
+        const mentionBlocks = mentions.map(m => `
+            <div style="background-color: #f8f9fa; border-left: 4px solid #2d5a27; padding: 15px 20px; margin: 15px 0; border-radius: 4px;">
+                <div style="margin-bottom: 10px;">
+                    <strong style="color: #2d5a27;">${m.mentionedByName}</strong>
+                    <span style="color: #666;"> mentioned you in </span>
+                    <strong style="color: #333;">${m.chatroomName}</strong>
+                </div>
+                <blockquote style="margin: 10px 0; padding: 10px 15px; background: #fff; border-radius: 4px; color: #555; font-style: italic;">
+                    "${m.messagePreview.length > 200 ? m.messagePreview.substring(0, 200) + '...' : m.messagePreview}"
+                </blockquote>
+                <a href="${m.chatroomUrl || baseUrl}" style="color: #2d5a27; text-decoration: none; font-weight: 500;">View conversation →</a>
+            </div>
+        `).join('');
+
+        return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You were mentioned</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 1px solid #e0e0e0;">
+                            <h1 style="margin: 0; color: #2d5a27; font-size: 24px; font-weight: 600;">
+                                ${isBatched ? `📬 You have ${mentions.length} new mentions` : '📬 You were mentioned'}
+                            </h1>
+                            <p style="margin: 10px 0 0; color: #666; font-size: 14px;">
+                                ${isBatched ? 'Here\'s a summary of your recent mentions in Power HR' : 'Someone mentioned you in a chatroom'}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 30px 40px;">
+                            ${mentionBlocks}
+
+                            <div style="text-align: center; margin-top: 30px;">
+                                <a href="${baseUrl}" style="display: inline-block; padding: 12px 30px; background-color: #2d5a27; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">
+                                    Open Power HR
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 40px; background-color: #f8f8f8; border-top: 1px solid #e0e0e0; border-radius: 0 0 8px 8px;">
+                            <p style="margin: 0; color: #999; font-size: 12px; line-height: 1.5; text-align: center;">
+                                You received this email because you have email notifications enabled for mentions.<br>
+                                <a href="${baseUrl}" style="color: #2d5a27;">Manage your notification preferences</a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+        `.trim();
+    }
+
+    /**
      * Strip HTML tags for plain text version
      */
     stripHtml(html) {

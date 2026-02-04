@@ -1897,7 +1897,107 @@ io.on("connection", (socket) => {
     // Keep a single concise startup line (not gated)
     console.log(`Server listening on port ${port}`);
   });
+
+  // Start mention email batch processor (runs every 5 minutes)
+  startMentionEmailBatchProcessor();
 })();
+
+// --- Mention Email Batch Processor ---
+// Processes pending mention emails every 5 minutes, batching multiple mentions per recipient
+let mentionEmailProcessorInterval = null;
+
+async function processPendingMentionEmails() {
+  const emailService = require("./services/emailService");
+
+  if (!emailService.isConfigured()) {
+    return; // Email not configured, skip silently
+  }
+
+  // Get a database connection - try multi-tenant first, fallback to legacy
+  let db;
+  try {
+    // For now, use the default ATS pool since mentions are in ATS schema
+    const { getPool } = require("./multiTenant");
+    db = await getPool("ats");
+  } catch (err) {
+    if (VERBOSE_APP_DEBUG) console.log("[MentionEmailProcessor] No database available, skipping");
+    return;
+  }
+
+  try {
+    // Get all unsent pending emails grouped by recipient
+    const { rows: pendingEmails } = await db.query(`
+      SELECT id, recipient_email, mentioned_by_name, mentioned_by_email,
+             chatroom_id, chatroom_name, message_id, message_preview, created_at
+      FROM public.pending_mention_emails
+      WHERE sent_at IS NULL
+      ORDER BY recipient_email, created_at ASC
+    `);
+
+    if (pendingEmails.length === 0) {
+      return; // Nothing to process
+    }
+
+    // Group by recipient
+    const byRecipient = {};
+    for (const email of pendingEmails) {
+      if (!byRecipient[email.recipient_email]) {
+        byRecipient[email.recipient_email] = [];
+      }
+      byRecipient[email.recipient_email].push(email);
+    }
+
+    const baseUrl = process.env.API_BASE_URL || "https://ats.s3protection.com";
+
+    // Send batched emails for each recipient
+    for (const [recipientEmail, mentions] of Object.entries(byRecipient)) {
+      try {
+        const mentionData = mentions.map((m) => ({
+          mentionedByName: m.mentioned_by_name,
+          chatroomName: m.chatroom_name,
+          messagePreview: m.message_preview,
+          chatroomUrl: `${baseUrl}?chatroom=${m.chatroom_id}`
+        }));
+
+        await emailService.sendBatchedMentionNotification({
+          to: recipientEmail,
+          mentions: mentionData
+        });
+
+        // Mark all these emails as sent
+        const ids = mentions.map((m) => m.id);
+        await db.query(`
+          UPDATE public.pending_mention_emails
+          SET sent_at = NOW()
+          WHERE id = ANY($1)
+        `, [ids]);
+
+        console.log(`[MentionEmailProcessor] Sent ${mentions.length} mention(s) to ${recipientEmail}`);
+      } catch (sendErr) {
+        console.error(`[MentionEmailProcessor] Failed to send to ${recipientEmail}:`, sendErr.message);
+      }
+    }
+  } catch (err) {
+    console.error("[MentionEmailProcessor] Error processing pending emails:", err.message);
+  }
+}
+
+function startMentionEmailBatchProcessor() {
+  // Run every 5 minutes (300000 ms)
+  const BATCH_INTERVAL_MS = 5 * 60 * 1000;
+
+  // Initial run after 30 seconds (give server time to fully start)
+  setTimeout(() => {
+    processPendingMentionEmails();
+  }, 30000);
+
+  // Then run every 5 minutes
+  mentionEmailProcessorInterval = setInterval(() => {
+    processPendingMentionEmails();
+  }, BATCH_INTERVAL_MS);
+
+  console.log("[MentionEmailProcessor] Started - processing every 5 minutes");
+}
 
 // --- Graceful shutdown ---
 process.on("SIGINT", async () => {
@@ -1905,6 +2005,10 @@ process.on("SIGINT", async () => {
   // Stop reminder scheduler
   if (reminderScheduler) {
     reminderScheduler.stop();
+  }
+  // Stop mention email batch processor
+  if (mentionEmailProcessorInterval) {
+    clearInterval(mentionEmailProcessorInterval);
   }
   // Shutdown multi-tenant database manager
   await dbManager.shutdown().catch(() => {});

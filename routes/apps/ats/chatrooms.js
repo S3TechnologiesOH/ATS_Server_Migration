@@ -630,6 +630,32 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
           console.warn("Could not save user mention:", mentionErr.message);
         }
       }
+
+      // Queue email notifications for users who have email notifications enabled
+      const chatroomName = chatrooms.length ? chatrooms[0].display_name : 'a chatroom';
+      for (const mention of userMentions) {
+        try {
+          // Check if user has email notifications enabled
+          const { rows: prefRows } = await req.db.query(`
+            SELECT email_notifications_enabled, mention_notifications
+            FROM ${DEFAULT_SCHEMA}.user_notification_preferences
+            WHERE email = $1
+          `, [mention.email]);
+
+          const prefs = prefRows[0] || { email_notifications_enabled: false, mention_notifications: true };
+
+          // Only queue if both email notifications and mention notifications are enabled
+          if (prefs.email_notifications_enabled && prefs.mention_notifications !== false) {
+            await req.db.query(`
+              INSERT INTO ${DEFAULT_SCHEMA}.pending_mention_emails
+                (recipient_email, mentioned_by_name, mentioned_by_email, chatroom_id, chatroom_name, message_id, message_preview)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `, [mention.email, userName, userEmail, chatroomId, chatroomName, message.id, content.substring(0, 300)]);
+          }
+        } catch (emailQueueErr) {
+          console.warn("Could not queue mention email:", emailQueueErr.message);
+        }
+      }
     }
 
     // Update participant record
@@ -796,7 +822,6 @@ router.post("/:id/messages/:msgId/create-note", requireChatroomAccess, async (re
     const chatroomId = parseInt(req.params.id, 10);
     const messageId = parseInt(req.params.msgId, 10);
     const userEmail = getPrimaryEmail(req);
-    const { priority, is_pinned = false } = req.body || {};
 
     // Get the message and chatroom info
     const { rows: messages } = await req.db.query(`
@@ -821,10 +846,10 @@ router.post("/:id/messages/:msgId/create-note", requireChatroomAccess, async (re
 
     const { rows: notes } = await req.db.query(`
       INSERT INTO ${DEFAULT_SCHEMA}.department_notes
-        (department_id, content, visibility, author_email, priority, is_pinned)
-      VALUES ($1, $2, 'shared', $3, $4, $5)
+        (department_id, content, visibility, author_email)
+      VALUES ($1, $2, 'shared', $3)
       RETURNING *
-    `, [message.department_id, noteContent, userEmail, priority || null, is_pinned]);
+    `, [message.department_id, noteContent, userEmail]);
 
     const note = notes[0];
 
@@ -1432,7 +1457,8 @@ router.get("/notification-preferences", async (req, res) => {
       desktop_enabled: true,
       sound_enabled: true,
       mention_notifications: true,
-      message_notifications: false
+      message_notifications: false,
+      email_notifications_enabled: false
     });
   } catch (e) {
     console.error("Error getting notification preferences:", e);
@@ -1448,24 +1474,88 @@ router.put("/notification-preferences", async (req, res) => {
       return res.status(401).json({ error: "unauthorized" });
     }
 
-    const { desktop_enabled, sound_enabled, mention_notifications, message_notifications } = req.body;
+    const { desktop_enabled, sound_enabled, mention_notifications, message_notifications, email_notifications_enabled } = req.body;
 
     const { rows } = await req.db.query(`
       INSERT INTO ${DEFAULT_SCHEMA}.user_notification_preferences
-        (email, desktop_enabled, sound_enabled, mention_notifications, message_notifications, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
+        (email, desktop_enabled, sound_enabled, mention_notifications, message_notifications, email_notifications_enabled, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
       ON CONFLICT (email) DO UPDATE SET
         desktop_enabled = COALESCE($2, user_notification_preferences.desktop_enabled),
         sound_enabled = COALESCE($3, user_notification_preferences.sound_enabled),
         mention_notifications = COALESCE($4, user_notification_preferences.mention_notifications),
         message_notifications = COALESCE($5, user_notification_preferences.message_notifications),
+        email_notifications_enabled = COALESCE($6, user_notification_preferences.email_notifications_enabled),
         updated_at = NOW()
       RETURNING *
-    `, [userEmail, desktop_enabled, sound_enabled, mention_notifications, message_notifications]);
+    `, [userEmail, desktop_enabled, sound_enabled, mention_notifications, message_notifications, email_notifications_enabled]);
 
     return res.json(rows[0]);
   } catch (e) {
     console.error("Error updating notification preferences:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// ==================== UI PREFERENCES ====================
+
+// GET /ui-preferences - Get user's UI preferences (chatroom settings, display options)
+router.get("/ui-preferences", async (req, res) => {
+  try {
+    const userEmail = getPrimaryEmail(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    const { rows } = await req.db.query(`
+      SELECT * FROM ${DEFAULT_SCHEMA}.user_ui_preferences
+      WHERE email = $1
+    `, [userEmail]);
+
+    if (rows.length) {
+      return res.json(rows[0]);
+    }
+
+    // Return defaults if no preferences saved
+    return res.json({
+      email: userEmail,
+      sidebar_default_collapsed: false,
+      enter_sends_message: true,
+      show_typing_indicators: true,
+      timestamp_format: '12h'
+    });
+  } catch (e) {
+    console.error("Error getting UI preferences:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /ui-preferences - Update user's UI preferences
+router.put("/ui-preferences", async (req, res) => {
+  try {
+    const userEmail = getPrimaryEmail(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    const { sidebar_default_collapsed, enter_sends_message, show_typing_indicators, timestamp_format } = req.body;
+
+    const { rows } = await req.db.query(`
+      INSERT INTO ${DEFAULT_SCHEMA}.user_ui_preferences
+        (email, sidebar_default_collapsed, enter_sends_message, show_typing_indicators, timestamp_format, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (email) DO UPDATE SET
+        sidebar_default_collapsed = COALESCE($2, user_ui_preferences.sidebar_default_collapsed),
+        enter_sends_message = COALESCE($3, user_ui_preferences.enter_sends_message),
+        show_typing_indicators = COALESCE($4, user_ui_preferences.show_typing_indicators),
+        timestamp_format = COALESCE($5, user_ui_preferences.timestamp_format),
+        updated_at = NOW()
+      RETURNING *
+    `, [userEmail, sidebar_default_collapsed, enter_sends_message, show_typing_indicators, timestamp_format]);
+
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error("Error updating UI preferences:", e);
     return res.status(500).json({ error: "db_error", detail: e.message });
   }
 });
