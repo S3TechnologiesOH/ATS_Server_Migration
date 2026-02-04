@@ -848,7 +848,8 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
     // Get chatroom with candidate and application IDs
     const { rows: chatrooms } = await req.db.query(`
       SELECT c.*,
-             cand.first_name, cand.last_name, cand.email, cand.phone, cand.location, cand.linkedin_url,
+             cand.first_name, cand.last_name, cand.email, cand.phone, cand.linkedin_url,
+             cand.city, cand.state, cand.country,
              a.application_date, a.resume_url, a.cover_letter_url,
              jl.job_title, jl.department as job_department
       FROM ${DEFAULT_SCHEMA}.chatrooms c
@@ -867,6 +868,7 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
     const applicationId = chatroom.application_id;
 
     // Build candidate info
+    const locationParts = [chatroom.city, chatroom.state, chatroom.country].filter(Boolean);
     const candidate = {
       id: candidateId,
       first_name: chatroom.first_name,
@@ -874,7 +876,7 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
       name: [chatroom.first_name, chatroom.last_name].filter(Boolean).join(" ") || "Unknown",
       email: chatroom.email,
       phone: chatroom.phone,
-      location: chatroom.location,
+      location: locationParts.length > 0 ? locationParts.join(", ") : null,
       linkedin_url: chatroom.linkedin_url
     };
 
