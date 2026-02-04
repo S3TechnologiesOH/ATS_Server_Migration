@@ -577,6 +577,28 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
     // Get user display name
     const userName = req.session?.user?.displayName || userEmail;
 
+    // Get chatroom info and department members for mention detection
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT c.department_id, c.display_name, c.candidate_name
+      FROM ${DEFAULT_SCHEMA}.chatrooms c WHERE c.id = $1
+    `, [chatroomId]);
+
+    let departmentMembers = [];
+    if (chatrooms.length && chatrooms[0].department_id) {
+      const { rows: members } = await req.db.query(`
+        SELECT dm.email,
+               COALESCE(SPLIT_PART(dm.email, '@', 1), dm.email) as display_name
+        FROM ${DEFAULT_SCHEMA}.department_members dm
+        WHERE dm.department_id = $1
+      `, [chatrooms[0].department_id]);
+
+      departmentMembers = members.map(m => ({
+        email: m.email,
+        display_name: m.display_name,
+        first_name: m.display_name.charAt(0).toUpperCase() + m.display_name.slice(1).split('.')[0].toLowerCase()
+      }));
+    }
+
     // Insert message
     const { rows: messages } = await req.db.query(`
       INSERT INTO ${DEFAULT_SCHEMA}.chatroom_messages
@@ -591,6 +613,23 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
     const noteMentions = extractNoteMentions(content);
     if (noteMentions.length > 0) {
       await saveNoteMentions(req.db, message.id, noteMentions);
+    }
+
+    // Extract and save user mentions
+    const userMentions = extractUserMentions(content, departmentMembers);
+    if (userMentions.length > 0) {
+      for (const mention of userMentions) {
+        try {
+          await req.db.query(`
+            INSERT INTO ${DEFAULT_SCHEMA}.chatroom_user_mentions
+              (message_id, chatroom_id, mentioned_email, mentioned_name, mentioned_by_email, mentioned_by_name)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (message_id, mentioned_email) DO NOTHING
+          `, [message.id, chatroomId, mention.email, mention.name, userEmail, userName]);
+        } catch (mentionErr) {
+          console.warn("Could not save user mention:", mentionErr.message);
+        }
+      }
     }
 
     // Update participant record
@@ -609,7 +648,8 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
         chatroom_id: chatroomId,
         message: {
           ...message,
-          note_mentions: noteMentions.map(id => ({ note_id: id }))
+          note_mentions: noteMentions.map(id => ({ note_id: id })),
+          user_mentions: userMentions
         }
       });
 
@@ -621,11 +661,29 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
         author_name: userName,
         preview: content.substring(0, 100)
       });
+
+      // Emit specific mention notifications
+      if (userMentions.length > 0 && chatrooms.length) {
+        for (const mention of userMentions) {
+          io.emit("chatroom:user-mentioned", {
+            chatroom_id: chatroomId,
+            chatroom_name: chatrooms[0].display_name,
+            candidate_name: chatrooms[0].candidate_name,
+            message_id: message.id,
+            mentioned_email: mention.email,
+            mentioned_name: mention.name,
+            mentioned_by_email: userEmail,
+            mentioned_by_name: userName,
+            preview: content.substring(0, 100)
+          });
+        }
+      }
     }
 
     return res.status(201).json({
       ...message,
-      note_mentions: noteMentions.map(id => ({ note_id: id }))
+      note_mentions: noteMentions.map(id => ({ note_id: id })),
+      user_mentions: userMentions
     });
   } catch (e) {
     console.error("Error sending message:", e);
@@ -1018,11 +1076,11 @@ router.post("/:id/share/pdf", requireChatroomAccess, async (req, res) => {
 
     const chatroom = chatrooms[0];
 
-    // Build messages query with optional date filter
+    // Build messages query with optional date filter (exclude deleted)
     let messagesQuery = `
       SELECT m.*
       FROM ${DEFAULT_SCHEMA}.chatroom_messages m
-      WHERE m.chatroom_id = $1
+      WHERE m.chatroom_id = $1 AND m.deleted_at IS NULL
     `;
     const queryParams = [chatroomId];
 
@@ -1113,11 +1171,11 @@ router.post("/:id/share/email", requireChatroomAccess, async (req, res) => {
 
     const chatroom = chatrooms[0];
 
-    // Build messages query with optional date filter
+    // Build messages query with optional date filter (exclude deleted)
     let messagesQuery = `
       SELECT m.*
       FROM ${DEFAULT_SCHEMA}.chatroom_messages m
-      WHERE m.chatroom_id = $1
+      WHERE m.chatroom_id = $1 AND m.deleted_at IS NULL
     `;
     const queryParams = [chatroomId];
 
@@ -1257,6 +1315,204 @@ router.get("/:id/searchable-notes", requireChatroomAccess, async (req, res) => {
   }
 });
 
+// ==================== USER MENTIONS ====================
+
+// GET /chatrooms/:id/members - Get department members for @mention autocomplete
+router.get("/:id/members", requireChatroomAccess, async (req, res) => {
+  try {
+    const chatroomId = parseInt(req.params.id, 10);
+    const { search, limit = 20 } = req.query;
+    const userEmail = getPrimaryEmail(req);
+
+    // Get department_id from chatroom
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT department_id FROM ${DEFAULT_SCHEMA}.chatrooms WHERE id = $1
+    `, [chatroomId]);
+
+    if (!chatrooms.length || !chatrooms[0].department_id) {
+      return res.json({ members: [] });
+    }
+
+    const departmentId = chatrooms[0].department_id;
+
+    // Get department members (excluding current user)
+    let query = `
+      SELECT dm.email, dm.role,
+             COALESCE(
+               SPLIT_PART(dm.email, '@', 1),
+               dm.email
+             ) as display_name
+      FROM ${DEFAULT_SCHEMA}.department_members dm
+      WHERE dm.department_id = $1
+        AND LOWER(dm.email) != LOWER($2)
+    `;
+    let params = [departmentId, userEmail || ''];
+
+    if (search) {
+      query += ` AND (dm.email ILIKE $3 OR SPLIT_PART(dm.email, '@', 1) ILIKE $3)`;
+      params.push(`%${search}%`);
+    }
+
+    query += ` ORDER BY dm.email LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit, 10));
+
+    const { rows: members } = await req.db.query(query, params);
+
+    // Format display names (capitalize first letter of email prefix)
+    const formattedMembers = members.map(m => ({
+      email: m.email,
+      role: m.role,
+      display_name: m.display_name.charAt(0).toUpperCase() + m.display_name.slice(1).toLowerCase(),
+      first_name: m.display_name.charAt(0).toUpperCase() + m.display_name.slice(1).split('.')[0].toLowerCase()
+    }));
+
+    return res.json({ members: formattedMembers });
+  } catch (e) {
+    console.error("Error searching members:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+/**
+ * Extract @FirstName mentions from message content
+ * Returns array of { name, email } for each mentioned user
+ */
+function extractUserMentions(content, membersList) {
+  if (!content || typeof content !== "string" || !membersList?.length) return [];
+
+  // Match @Word patterns (capitalized first letter typical for names)
+  const regex = /@([A-Za-z][a-zA-Z]*)/g;
+  const mentions = [];
+  const seen = new Set();
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    const mentionName = match[1].toLowerCase();
+
+    // Find matching member by first name
+    const member = membersList.find(m =>
+      m.first_name?.toLowerCase() === mentionName ||
+      m.display_name?.toLowerCase().startsWith(mentionName)
+    );
+
+    if (member && !seen.has(member.email.toLowerCase())) {
+      seen.add(member.email.toLowerCase());
+      mentions.push({
+        name: member.first_name || member.display_name,
+        email: member.email
+      });
+    }
+  }
+
+  return mentions;
+}
+
+// ==================== NOTIFICATION PREFERENCES ====================
+
+// GET /notification-preferences - Get user's notification preferences
+router.get("/notification-preferences", async (req, res) => {
+  try {
+    const userEmail = getPrimaryEmail(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    const { rows } = await req.db.query(`
+      SELECT * FROM ${DEFAULT_SCHEMA}.user_notification_preferences
+      WHERE email = $1
+    `, [userEmail]);
+
+    if (rows.length) {
+      return res.json(rows[0]);
+    }
+
+    // Return defaults if no preferences saved
+    return res.json({
+      email: userEmail,
+      desktop_enabled: true,
+      sound_enabled: true,
+      mention_notifications: true,
+      message_notifications: false
+    });
+  } catch (e) {
+    console.error("Error getting notification preferences:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /notification-preferences - Update user's notification preferences
+router.put("/notification-preferences", async (req, res) => {
+  try {
+    const userEmail = getPrimaryEmail(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    const { desktop_enabled, sound_enabled, mention_notifications, message_notifications } = req.body;
+
+    const { rows } = await req.db.query(`
+      INSERT INTO ${DEFAULT_SCHEMA}.user_notification_preferences
+        (email, desktop_enabled, sound_enabled, mention_notifications, message_notifications, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (email) DO UPDATE SET
+        desktop_enabled = COALESCE($2, user_notification_preferences.desktop_enabled),
+        sound_enabled = COALESCE($3, user_notification_preferences.sound_enabled),
+        mention_notifications = COALESCE($4, user_notification_preferences.mention_notifications),
+        message_notifications = COALESCE($5, user_notification_preferences.message_notifications),
+        updated_at = NOW()
+      RETURNING *
+    `, [userEmail, desktop_enabled, sound_enabled, mention_notifications, message_notifications]);
+
+    return res.json(rows[0]);
+  } catch (e) {
+    console.error("Error updating notification preferences:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// GET /mentions/unread - Get unread mentions for current user
+router.get("/mentions/unread", async (req, res) => {
+  try {
+    const userEmail = getPrimaryEmail(req);
+    if (!userEmail) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    const { rows } = await req.db.query(`
+      SELECT m.*, c.display_name as chatroom_name, c.candidate_name
+      FROM ${DEFAULT_SCHEMA}.chatroom_user_mentions m
+      JOIN ${DEFAULT_SCHEMA}.chatrooms c ON c.id = m.chatroom_id
+      WHERE LOWER(m.mentioned_email) = LOWER($1) AND m.is_read = FALSE
+      ORDER BY m.created_at DESC
+      LIMIT 50
+    `, [userEmail]);
+
+    return res.json({ mentions: rows });
+  } catch (e) {
+    console.error("Error getting unread mentions:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /mentions/:id/read - Mark a mention as read
+router.put("/mentions/:id/read", async (req, res) => {
+  try {
+    const mentionId = parseInt(req.params.id, 10);
+    const userEmail = getPrimaryEmail(req);
+
+    await req.db.query(`
+      UPDATE ${DEFAULT_SCHEMA}.chatroom_user_mentions
+      SET is_read = TRUE
+      WHERE id = $1 AND LOWER(mentioned_email) = LOWER($2)
+    `, [mentionId, userEmail]);
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("Error marking mention as read:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
 // ==================== TYPING INDICATORS (via Socket.IO) ====================
 // These are handled directly in app.js Socket.IO handlers
 
@@ -1265,3 +1521,4 @@ module.exports = router;
 module.exports.createChatroomForCandidate = createChatroomForCandidate;
 module.exports.canAccessChatroom = canAccessChatroom;
 module.exports.extractNoteMentions = extractNoteMentions;
+module.exports.extractUserMentions = extractUserMentions;
