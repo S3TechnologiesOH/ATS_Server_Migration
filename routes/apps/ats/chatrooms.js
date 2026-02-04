@@ -384,6 +384,59 @@ router.get("/unread-counts", async (req, res) => {
   }
 });
 
+// GET /chatrooms/by-candidate/:candidateId - Find chatroom for a candidate
+router.get("/by-candidate/:candidateId", async (req, res) => {
+  try {
+    const candidateId = parseInt(req.params.candidateId, 10);
+    const userEmail = getPrimaryEmail(req);
+
+    if (!candidateId || !Number.isFinite(candidateId)) {
+      return res.status(400).json({ error: "invalid_candidate_id" });
+    }
+
+    // Find chatrooms for this candidate (return most recent active one)
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT c.*,
+        (SELECT json_agg(json_build_object(
+          'type', ca.attachment_type,
+          'file_name', ca.file_name,
+          'file_url', ca.file_url
+        ))
+        FROM ${DEFAULT_SCHEMA}.chatroom_attachments ca
+        WHERE ca.chatroom_id = c.id
+        ) as attachments
+      FROM ${DEFAULT_SCHEMA}.chatrooms c
+      WHERE c.candidate_id = $1 AND c.status = 'active'
+      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+      LIMIT 1
+    `, [candidateId]);
+
+    if (!chatrooms.length) {
+      return res.status(404).json({ error: "chatroom_not_found" });
+    }
+
+    const chatroom = chatrooms[0];
+
+    // Check access (unless admin)
+    if (!isAdmin(req)) {
+      const hasAccess = await canAccessChatroom(req.db, chatroom.id, userEmail);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "chatroom_access_denied" });
+      }
+    }
+
+    return res.json({
+      chatroom: {
+        ...chatroom,
+        attachments: chatroom.attachments || []
+      }
+    });
+  } catch (e) {
+    console.error("Error finding chatroom by candidate:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
 // GET /chatrooms/:id - Get single chatroom with attachments
 router.get("/:id", requireChatroomAccess, async (req, res) => {
   try {
@@ -531,7 +584,7 @@ router.get("/:id/messages", requireChatroomAccess, async (req, res) => {
         ) as note_mentions
       FROM ${DEFAULT_SCHEMA}.chatroom_messages m
       WHERE ${whereConditions.join(" AND ")}
-      ORDER BY m.created_at ${after ? 'ASC' : 'DESC'}
+      ORDER BY m.is_urgent DESC NULLS LAST, m.created_at ${after ? 'ASC' : 'DESC'}
       LIMIT $${paramIndex}
     `, params);
 
@@ -568,7 +621,7 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
   try {
     const chatroomId = parseInt(req.params.id, 10);
     const userEmail = getPrimaryEmail(req);
-    const { content, content_type = "text" } = req.body || {};
+    const { content, content_type = "text", is_urgent = false } = req.body || {};
 
     if (!content || !content.trim()) {
       return res.status(400).json({ error: "content_required" });
@@ -602,10 +655,11 @@ router.post("/:id/messages", requireChatroomAccess, async (req, res) => {
     // Insert message
     const { rows: messages } = await req.db.query(`
       INSERT INTO ${DEFAULT_SCHEMA}.chatroom_messages
-        (chatroom_id, content, content_type, author_email, author_name)
-      VALUES ($1, $2, $3, $4, $5)
+        (chatroom_id, content, content_type, author_email, author_name, is_urgent, urgent_marked_by, urgent_marked_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
-    `, [chatroomId, content.trim(), content_type, userEmail, userName]);
+    `, [chatroomId, content.trim(), content_type, userEmail, userName,
+        is_urgent === true, is_urgent === true ? userEmail : null, is_urgent === true ? new Date() : null]);
 
     const message = messages[0];
 
@@ -778,6 +832,46 @@ router.put("/:id/messages/:msgId", requireChatroomAccess, async (req, res) => {
     });
   } catch (e) {
     console.error("Error editing message:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
+// PUT /chatrooms/:id/messages/:msgId/urgent - Toggle urgent status
+router.put("/:id/messages/:msgId/urgent", requireChatroomAccess, async (req, res) => {
+  try {
+    const chatroomId = parseInt(req.params.id, 10);
+    const messageId = parseInt(req.params.msgId, 10);
+    const userEmail = getPrimaryEmail(req);
+    const { is_urgent } = req.body || {};
+
+    // Update message urgent status
+    const { rows: messages } = await req.db.query(`
+      UPDATE ${DEFAULT_SCHEMA}.chatroom_messages
+      SET is_urgent = $1,
+          urgent_marked_by = CASE WHEN $1 = TRUE THEN $2 ELSE NULL END,
+          urgent_marked_at = CASE WHEN $1 = TRUE THEN NOW() ELSE NULL END
+      WHERE id = $3 AND chatroom_id = $4 AND deleted_at IS NULL
+      RETURNING *
+    `, [is_urgent === true, userEmail, messageId, chatroomId]);
+
+    if (!messages.length) {
+      return res.status(404).json({ error: "message_not_found" });
+    }
+
+    // Emit Socket.IO event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`chatroom:${chatroomId}`).emit("chatroom:message:urgent-toggled", {
+        chatroom_id: chatroomId,
+        message_id: messageId,
+        is_urgent: is_urgent === true,
+        marked_by: is_urgent === true ? userEmail : null
+      });
+    }
+
+    return res.json(messages[0]);
+  } catch (e) {
+    console.error("Error toggling message urgency:", e);
     return res.status(500).json({ error: "db_error", detail: e.message });
   }
 });
