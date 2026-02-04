@@ -838,6 +838,158 @@ router.post("/:id/attachments", requireChatroomAccess, async (req, res) => {
   }
 });
 
+// ==================== APPLICANT INFO PANEL ====================
+
+// GET /chatrooms/:id/applicant-info - Get aggregated candidate info for sidebar panel
+router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
+  try {
+    const chatroomId = parseInt(req.params.id, 10);
+
+    // Get chatroom with candidate and application IDs
+    const { rows: chatrooms } = await req.db.query(`
+      SELECT c.*,
+             cand.first_name, cand.last_name, cand.email, cand.phone, cand.location, cand.linkedin_url,
+             a.application_date, a.resume_url, a.cover_letter_url,
+             jl.job_title, jl.department as job_department
+      FROM ${DEFAULT_SCHEMA}.chatrooms c
+      LEFT JOIN ${PEOPLE_TABLE} cand ON cand.${PEOPLE_PK} = c.candidate_id
+      LEFT JOIN ${APP_TABLE} a ON a.${APP_PK} = c.application_id
+      LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+      WHERE c.id = $1
+    `, [chatroomId]);
+
+    if (!chatrooms.length) {
+      return res.status(404).json({ error: "chatroom_not_found" });
+    }
+
+    const chatroom = chatrooms[0];
+    const candidateId = chatroom.candidate_id;
+    const applicationId = chatroom.application_id;
+
+    // Build candidate info
+    const candidate = {
+      id: candidateId,
+      first_name: chatroom.first_name,
+      last_name: chatroom.last_name,
+      name: [chatroom.first_name, chatroom.last_name].filter(Boolean).join(" ") || "Unknown",
+      email: chatroom.email,
+      phone: chatroom.phone,
+      location: chatroom.location,
+      linkedin_url: chatroom.linkedin_url
+    };
+
+    // Build application info
+    const application = applicationId ? {
+      id: applicationId,
+      job_title: chatroom.job_title,
+      department: chatroom.job_department,
+      applied_date: chatroom.application_date,
+      status: null // Will be fetched below
+    } : null;
+
+    // Get latest application stage/status
+    if (applicationId) {
+      const { rows: stages } = await req.db.query(`
+        SELECT status, updated_at
+        FROM ${DEFAULT_SCHEMA}.application_stages
+        WHERE application_id = $1
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 1
+      `, [applicationId]);
+      if (stages.length) {
+        application.status = stages[0].status;
+        application.status_updated_at = stages[0].updated_at;
+      }
+    }
+
+    // Get AI score
+    let aiScore = null;
+    if (candidateId) {
+      const { rows: scores } = await req.db.query(`
+        SELECT overall_score, experience_fit, skills_fit, culture_fit, location_fit,
+               strengths, risk_flags, created_at as scored_at
+        FROM ${DEFAULT_SCHEMA}.candidate_ai_scores
+        WHERE candidate_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [candidateId]);
+      if (scores.length) {
+        const score = scores[0];
+        aiScore = {
+          overall: score.overall_score,
+          experience_fit: score.experience_fit,
+          skills_fit: score.skills_fit,
+          culture_fit: score.culture_fit,
+          location_fit: score.location_fit,
+          strengths: score.strengths || [],
+          weaknesses: score.risk_flags || [],
+          scored_at: score.scored_at
+        };
+      }
+    }
+
+    // Get recent notes tagged to this candidate (last 5)
+    let recentNotes = [];
+    if (candidateId && chatroom.department_id) {
+      const { rows: notes } = await req.db.query(`
+        SELECT dn.id, SUBSTRING(dn.content, 1, 150) as preview,
+               dn.author_email, dn.created_at
+        FROM ${DEFAULT_SCHEMA}.note_candidate_tags nct
+        JOIN ${DEFAULT_SCHEMA}.department_notes dn ON dn.id = nct.note_id
+        WHERE nct.candidate_id = $1 AND dn.department_id = $2
+        ORDER BY dn.created_at DESC
+        LIMIT 5
+      `, [candidateId, chatroom.department_id]);
+      recentNotes = notes;
+    }
+
+    // Get documents (resume, cover letter)
+    const documents = {
+      resume_url: chatroom.resume_url || null,
+      cover_letter_url: chatroom.cover_letter_url || null
+    };
+
+    // Get any upcoming interviews/meetings (from application_stages with interview status)
+    let interview = null;
+    if (applicationId) {
+      const { rows: interviews } = await req.db.query(`
+        SELECT status, scheduled_at, updated_at
+        FROM ${DEFAULT_SCHEMA}.application_stages
+        WHERE application_id = $1
+          AND LOWER(status) LIKE '%interview%'
+          AND (scheduled_at IS NULL OR scheduled_at >= NOW() - INTERVAL '1 day')
+        ORDER BY COALESCE(scheduled_at, updated_at) DESC
+        LIMIT 1
+      `, [applicationId]);
+      if (interviews.length) {
+        interview = {
+          status: interviews[0].status,
+          scheduled_at: interviews[0].scheduled_at,
+          updated_at: interviews[0].updated_at
+        };
+      }
+    }
+
+    return res.json({
+      candidate,
+      application,
+      aiScore,
+      documents,
+      recentNotes,
+      interview,
+      chatroom: {
+        id: chatroom.id,
+        display_name: chatroom.display_name,
+        department_id: chatroom.department_id,
+        created_at: chatroom.created_at
+      }
+    });
+  } catch (e) {
+    console.error("Error getting applicant info:", e);
+    return res.status(500).json({ error: "db_error", detail: e.message });
+  }
+});
+
 // ==================== NOTES INTEGRATION ====================
 
 // GET /chatrooms/:id/searchable-notes - Get notes for @mention autocomplete
