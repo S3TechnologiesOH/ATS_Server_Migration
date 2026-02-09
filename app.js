@@ -493,7 +493,17 @@ const msalConfig = {
 };
 
 const msalClient = new ConfidentialClientApplication(msalConfig);
-const OIDC_SCOPES = ["openid", "profile", "email"];
+const OIDC_SCOPES = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "User.Read",
+  "Calendars.ReadWrite",
+  "Mail.ReadWrite",
+  "Mail.Send",
+  "People.Read",
+];
 
 function buildAuthUrl(req, res, next) {
   // If already authenticated, redirect directly to success page
@@ -548,6 +558,17 @@ async function handleAuthRedirect(req, res, next) {
     };
 
     req.session.user = user;
+
+    // Populate Graph session so requireGraphAuth is satisfied immediately
+    // (no separate /graph/login popup needed)
+    req.session.graph = {
+      accessToken: response.accessToken,
+      refreshToken: response.refreshToken || null,
+      expiresAt: response.expiresOn
+        ? response.expiresOn.getTime()
+        : Date.now() + 55 * 60 * 1000,
+    };
+
     delete req.session.authState;
     delete req.session.authNonce;
 
