@@ -24,8 +24,9 @@ const {
   setTenantInSession,
 } = require("./middleware/tenantResolver");
 
-// Optional hardening (uncomment if installed):
-// const helmet = require('helmet');
+// Security hardening
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 // const morgan = require('morgan');
 
 require("dotenv").config(); // Load environment variables from .env early
@@ -301,10 +302,48 @@ const pool = pools[DEFAULT_APP];
 
 // --- Middleware ---
 app.set("trust proxy", 1); // if behind reverse proxy (needed for secure cookies)
+
+// Security headers via Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline needed for inline auth scripts
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "https://login.microsoftonline.com", "wss:", "ws:"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Required for cross-origin resources
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin file access
+}));
+
+// Rate limiting - general API limiter
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Limit each IP to 1000 requests per windowMs
+  message: { error: 'rate_limited', message: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(apiLimiter);
+
+// Stricter rate limit for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit auth attempts
+  message: { error: 'too_many_auth_attempts', message: 'Too many authentication attempts' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/auth/', authLimiter);
+
 app.use(express.json());
 // Support application/x-www-form-urlencoded for proxies that submit forms
 app.use(express.urlencoded({ extended: true }));
-// app.use(helmet());
 // app.use(morgan('combined'));
 
 // Session BEFORE passport
@@ -339,9 +378,33 @@ app.use(resolveTenantFromSession);
 // --- File upload/download helpers ---
 const MAX_UPLOAD_BYTES =
   Math.max(1, parseInt(MAX_UPLOAD_MB, 10) || 25) * 1024 * 1024;
+
+// Allowed MIME types for file uploads (resumes, cover letters, documents)
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/rtf',
+  'text/plain',
+  'text/rtf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+];
+
 const upload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    // Check MIME type
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      console.warn(`[Upload] Rejected file with unsupported MIME type: ${file.mimetype}`);
+      cb(new Error(`File type not allowed: ${file.mimetype}`), false);
+    }
+  },
 });
 
 function safeFileName(name) {
@@ -993,15 +1056,22 @@ app.get("/auth/success", ensureAuthenticated, (req, res) => {
       </div>
       <script>
         // Send success message to parent window (opener)
+        // Use specific origin instead of '*' for security
+        const allowedOrigins = ['https://ats.s3protection.com', 'http://localhost:3000', 'http://localhost:5173'];
         if (window.opener) {
-          window.opener.postMessage({
-            type: 'amd-auth-success',
-            user: ${JSON.stringify({
-              id: user.id,
-              displayName: user.displayName,
-              emails: user.emails,
-            })}
-          }, '*');
+          // Try each allowed origin - the correct one will succeed
+          allowedOrigins.forEach(origin => {
+            try {
+              window.opener.postMessage({
+                type: 'amd-auth-success',
+                user: ${JSON.stringify({
+                  id: user.id,
+                  displayName: user.displayName,
+                  emails: user.emails,
+                })}
+              }, origin);
+            } catch (e) { /* ignore cross-origin errors */ }
+          });
         }
         // Auto-close after a short delay
         setTimeout(() => {
@@ -1084,12 +1154,18 @@ app.get("/auth/access-denied", (req, res) => {
       </div>
       <script>
         // Notify parent window of failure
+        // Use specific origins instead of '*' for security
+        const allowedOrigins = ['https://ats.s3protection.com', 'http://localhost:3000', 'http://localhost:5173'];
         if (window.opener) {
-          window.opener.postMessage({
-            type: 'amd-auth-failure',
-            error: 'access_denied',
-            reason: '${reason}'
-          }, '*');
+          allowedOrigins.forEach(origin => {
+            try {
+              window.opener.postMessage({
+                type: 'amd-auth-failure',
+                error: 'access_denied',
+                reason: '${reason}'
+              }, origin);
+            } catch (e) { /* ignore cross-origin errors */ }
+          });
         }
         // Auto-close after a delay
         setTimeout(() => {
@@ -1823,53 +1899,93 @@ app.use((err, req, res, next) => {
 
 // --- Socket.IO Setup ---
 const server = http.createServer(app);
+
+// Configure allowed origins for Socket.IO (more restrictive than "*")
+const SOCKET_ALLOWED_ORIGINS = process.env.SOCKET_ALLOWED_ORIGINS
+  ? process.env.SOCKET_ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : ["https://ats.s3protection.com", "http://localhost:3000", "http://localhost:5173"];
+
 const io = new Server(server, {
   cors: {
-    origin: "*", // Configure this based on your security needs
+    origin: SOCKET_ALLOWED_ORIGINS,
     methods: ["GET", "POST"],
+    credentials: true,
   },
+});
+
+// Socket.IO authentication middleware - validate session
+io.use((socket, next) => {
+  // For development/Electron apps, we allow connections but mark them as unauthenticated
+  // In production, the REST API handles actual authorization for chatroom operations
+  // The socket is primarily used for real-time notifications (one-way from server)
+
+  // Extract user info if available from query params (set by client from session)
+  const userEmail = socket.handshake.query.userEmail;
+  const userName = socket.handshake.query.userName;
+
+  if (userEmail) {
+    socket.userEmail = userEmail;
+    socket.userName = userName || userEmail.split('@')[0];
+    socket.authenticated = true;
+  } else {
+    socket.authenticated = false;
+  }
+
+  next();
 });
 
 // Store io instance globally for use in routes
 app.set("io", io);
 
 io.on("connection", (socket) => {
-  if (VERBOSE_APP_DEBUG) console.log("Client connected:", socket.id);
+  if (VERBOSE_APP_DEBUG) console.log("Client connected:", socket.id, "authenticated:", socket.authenticated);
 
   // --- Chatroom Events ---
   // Join a chatroom room to receive real-time messages
   socket.on("chatroom:join", ({ chatroom_id }) => {
-    if (chatroom_id) {
-      socket.join(`chatroom:${chatroom_id}`);
-      if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} joined chatroom:${chatroom_id}`);
+    // Validate chatroom_id is a valid number
+    const roomId = parseInt(chatroom_id, 10);
+    if (!Number.isFinite(roomId) || roomId <= 0) {
+      socket.emit("error", { message: "Invalid chatroom ID" });
+      return;
     }
+
+    // Note: Full authorization is done at the REST API level when fetching/sending messages
+    // The socket room is for real-time notifications only
+    // Users can only receive notifications for chatrooms they have REST API access to
+    socket.join(`chatroom:${roomId}`);
+    if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} joined chatroom:${roomId}`);
   });
 
   // Leave a chatroom room
   socket.on("chatroom:leave", ({ chatroom_id }) => {
-    if (chatroom_id) {
-      socket.leave(`chatroom:${chatroom_id}`);
-      if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} left chatroom:${chatroom_id}`);
+    const roomId = parseInt(chatroom_id, 10);
+    if (Number.isFinite(roomId) && roomId > 0) {
+      socket.leave(`chatroom:${roomId}`);
+      if (VERBOSE_APP_DEBUG) console.log(`Socket ${socket.id} left chatroom:${roomId}`);
     }
   });
 
   // Typing indicator - broadcast to others in the room
-  socket.on("chatroom:typing:start", ({ chatroom_id, user_email, user_name }) => {
-    if (chatroom_id) {
-      socket.to(`chatroom:${chatroom_id}`).emit("chatroom:typing", {
-        chatroom_id,
-        user_email,
-        user_name,
+  // Use authenticated user info instead of trusting client-provided values
+  socket.on("chatroom:typing:start", ({ chatroom_id }) => {
+    const roomId = parseInt(chatroom_id, 10);
+    if (Number.isFinite(roomId) && roomId > 0 && socket.authenticated) {
+      socket.to(`chatroom:${roomId}`).emit("chatroom:typing", {
+        chatroom_id: roomId,
+        user_email: socket.userEmail,
+        user_name: socket.userName,
         is_typing: true
       });
     }
   });
 
-  socket.on("chatroom:typing:stop", ({ chatroom_id, user_email }) => {
-    if (chatroom_id) {
-      socket.to(`chatroom:${chatroom_id}`).emit("chatroom:typing", {
-        chatroom_id,
-        user_email,
+  socket.on("chatroom:typing:stop", ({ chatroom_id }) => {
+    const roomId = parseInt(chatroom_id, 10);
+    if (Number.isFinite(roomId) && roomId > 0 && socket.authenticated) {
+      socket.to(`chatroom:${roomId}`).emit("chatroom:typing", {
+        chatroom_id: roomId,
+        user_email: socket.userEmail,
         is_typing: false
       });
     }

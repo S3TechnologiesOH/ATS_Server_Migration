@@ -1,0 +1,2229 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where comments have been removed, empty lines have been removed, content has been compressed (code blocks are separated by ⋮---- delimiter).
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Code comments have been removed from supported file types
+- Empty lines have been removed from all files
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.claude/settings.local.json
+.dockerignore
+.env.example
+.env.reminders.example
+.gitattributes
+.gitignore
+app.js
+config.js
+connectwise.js
+database.json
+dbManager.js
+docker-compose.yml
+Dockerfile
+ENV_VALIDATION.md
+graphAppClient.js
+middleware/apiKeyAuth.js
+middleware/tenantResolver.js
+migrations/1701600000000_init-ats-schema.js
+migrations/1701700000000_add-department-icon.js
+migrations/add-icon-column.sql
+migrations/create-app-user.sql
+multiTenant.js
+package.json
+public/embed/widget.js
+README.md
+routes/apps/ats/admin.js
+routes/apps/ats/applications.js
+routes/apps/ats/candidates.js
+routes/apps/ats/chatrooms.js
+routes/apps/ats/dashboard.js
+routes/apps/ats/graph.js
+routes/apps/ats/helpers.js
+routes/apps/ats/index.js
+routes/apps/ats/jobs.js
+routes/apps/ats/misc.js
+routes/apps/ats/preferences.js
+routes/apps/ats/public.js
+routes/apps/ats/README.md
+routes/apps/ats/rejection.js
+routes/apps/ats/reports.js
+routes/apps/ats/share.js
+routes/apps/ats/skills.js
+routes/interviewReminders.js
+services/aiSummaryService.js
+services/emailService.js
+services/interviewReminderScheduler.js
+services/pdfService.js
+services/scoringService.js
+sql/add-resume-columns-tenant.sql
+sql/master-schema.sql
+sql/migrations/add_api_keys_and_questions.sql
+sql/migrations/add_tenant_question_responses.sql
+sql/schemas/candidate_ai_scores_schema.sql
+sql/schemas/candidate_flags_schema.sql
+sql/schemas/candidates_schema.sql
+sql/schemas/candidates_skills_schema.sql
+sql/schemas/whole_schema.sql
+swagger.js
+updates/Application Management Dashboard Setup 1.0.10.exe
+updates/Application Management Dashboard Setup 1.0.10.exe.blockmap
+updates/Application Management Dashboard Setup 1.0.11.exe
+updates/Application Management Dashboard Setup 1.0.11.exe.blockmap
+updates/Application Management Dashboard Setup 1.1.1.exe
+updates/Application Management Dashboard Setup 1.1.1.exe.blockmap
+updates/Application Management Dashboard Setup 1.2.0.exe
+updates/Application Management Dashboard Setup 1.2.0.exe.blockmap
+updates/Application Management Dashboard Setup 1.2.1.exe
+updates/Application Management Dashboard Setup 1.2.1.exe.blockmap
+updates/Application Management Dashboard Setup 1.2.2.exe
+updates/Application Management Dashboard Setup 1.2.2.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.0.exe
+updates/Application Management Dashboard Setup 1.3.0.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.1.exe
+updates/Application Management Dashboard Setup 1.3.1.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.2.exe
+updates/Application Management Dashboard Setup 1.3.2.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.3.exe
+updates/Application Management Dashboard Setup 1.3.3.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.4.exe
+updates/Application Management Dashboard Setup 1.3.4.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.5.exe
+updates/Application Management Dashboard Setup 1.3.5.exe.blockmap
+updates/Application Management Dashboard Setup 1.3.6.exe
+updates/Application Management Dashboard Setup 1.3.6.exe.blockmap
+updates/ATSv1.2.1.zip
+updates/ATSv1.3.0.zip
+updates/latest.yml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".claude/settings.local.json">
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(dir /b \"d:\\_Nancy Projects\\ATS_Server_Migration\\routes\\apps\")",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(powershell -Command \"Get-ChildItem -Path ''d:\\_Nancy Projects\\ATS_Server_Migration'' -Filter ''.env'' -Force | Select-Object FullName\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
+</file>
+
+<file path=".env.reminders.example">
+# ==============================================================================
+# Interview Reminder Email Configuration
+# ==============================================================================
+# Add these lines to your .env file to enable automated interview reminders
+
+# --- Email Service (REQUIRED) ---
+# Choose one of the options below:
+
+# Option 1: Mailgun API (RECOMMENDED - Best Deliverability & Speed)
+# Get credentials from https://app.mailgun.com
+MAILGUN_API_KEY=your-mailgun-api-key
+MAILGUN_DOMAIN=mg.yourdomain.com
+# For EU region, uncomment: MAILGUN_API_URL=https://api.eu.mailgun.net
+EMAIL_FROM=noreply@mg.yourdomain.com
+
+# Option 2: Gmail SMTP (Good for Development/Testing)
+# Generate app password at: https://myaccount.google.com/apppasswords
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=your-email@gmail.com
+# SMTP_PASSWORD=your-app-password-here
+# EMAIL_FROM=noreply@s3protection.com
+
+# Option 3: Microsoft 365 / Outlook SMTP
+# SMTP_HOST=smtp.office365.com
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=your-email@yourdomain.com
+# SMTP_PASSWORD=your-password
+# EMAIL_FROM=noreply@yourdomain.com
+
+# Option 4: SendGrid SMTP
+# SMTP_HOST=smtp.sendgrid.net
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=apikey
+# SMTP_PASSWORD=your-sendgrid-api-key
+# EMAIL_FROM=noreply@yourdomain.com
+
+# --- Reminder Settings (OPTIONAL - defaults shown) ---
+# How many hours before interview to send reminder
+REMINDER_HOURS_BEFORE=24
+
+# Cron schedule for checking upcoming interviews
+# Default: Every hour at :00 minutes
+# Examples:
+#   */30 * * * *  = Every 30 minutes
+#   0 */2 * * *   = Every 2 hours
+#   0 9,14 * * *  = At 9 AM and 2 PM daily
+REMINDER_CHECK_CRON=0 */1 * * *
+
+# --- API Configuration (REQUIRED) ---
+# Base URL for email action links (confirm/cancel/reschedule)
+# This should match your backend's public URL
+API_BASE_URL=https://ats.s3protection.com
+
+# ==============================================================================
+# Quick Setup Instructions
+# ==============================================================================
+# 1. Copy the configuration above to your .env file
+# 2. Choose an SMTP option and fill in credentials
+# 3. Update API_BASE_URL to match your backend URL
+# 4. Run database migration: psql -d applicationDashboard -f database/add_interview_reminders.sql
+# 5. Restart backend: npm start
+# 6. Look for: "[EmailService] ✓ Initialized" in logs
+#
+# For detailed setup: See INTERVIEW_REMINDER_SETUP.md
+# ==============================================================================
+</file>
+
+<file path=".gitattributes">
+# Auto detect text files and perform LF normalization
+* text=auto
+</file>
+
+<file path=".gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Directory for instrumented libs generated by jscoverage/JSCover
+lib-cov
+
+# Coverage directory used by tools like istanbul
+coverage
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Bower dependency directory (https://bower.io/)
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Snowpack dependency directory (https://snowpack.dev/)
+web_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+# Comment in the public line in if your project uses Gatsby and not Next.js
+# https://nextjs.org/blog/next-9-1#public-directory-support
+# public
+
+# vuepress build output
+.vuepress/dist
+
+# vuepress v2.x temp and cache directory
+.temp
+.cache
+
+# vitepress build output
+**/.vitepress/dist
+
+# vitepress cache directory
+**/.vitepress/cache
+
+# Docusaurus cache and generated files
+.docusaurus
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+</file>
+
+<file path="connectwise.js">
+
+</file>
+
+<file path="database.json">
+{
+  "defaultEnv": "local",
+  "local": {
+    "driver": "pg",
+    "user": { "ENV": "DB_USER" },
+    "password": { "ENV": "DB_PASSWORD" },
+    "host": { "ENV": "DB_HOST" },
+    "database": { "ENV": "DB_NAME" },
+    "port": { "ENV": "DB_PORT" }
+  },
+  "production": {
+    "driver": "pg",
+    "user": { "ENV": "DB_USER" },
+    "password": { "ENV": "DB_PASSWORD" },
+    "host": { "ENV": "DB_HOST" },
+    "database": { "ENV": "DB_NAME" },
+    "port": { "ENV": "DB_PORT" },
+    "ssl": { "rejectUnauthorized": false }
+  }
+}
+</file>
+
+<file path="Dockerfile">
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files first (for better Docker layer caching)
+COPY package*.json ./
+
+# Install dependencies including PostgreSQL client
+RUN npm install
+
+# Copy the rest of the application
+COPY . .
+
+# Runtime environment defaults (overridden by compose/env at run-time)
+ENV NODE_ENV=production \
+	OAUTH_TENANT_ID= \
+	OAUTH_API_AUDIENCE= \
+	OAUTH_REQUIRED_ROLE=
+
+# Expose port
+EXPOSE 3000
+
+# Start command
+CMD ["npm", "start"]
+</file>
+
+<file path="ENV_VALIDATION.md">
+# Environment Variable Validation
+
+This backend includes comprehensive environment variable validation that runs at startup to prevent runtime failures.
+
+## How It Works
+
+The validation system checks for:
+1. **Required variables** - Critical variables that must be set
+2. **Conditional variables** - Variables required when certain features are enabled
+3. **Type validation** - Ensures numeric values are valid numbers
+4. **Configuration completeness** - Warns about partial configurations
+
+## Validation Categories
+
+### ✅ Required (Critical)
+These variables **must** be set or the application will not start:
+- `SESSION_SECRET` - Session cookie signing (security)
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` - Database connection
+
+### ⚠️ Conditional (Feature-Specific)
+These are required only when specific features are used:
+
+#### Azure AD Authentication
+If **any** Azure AD variable is set, all must be set:
+- `AZURE_AD_TENANT_ID`
+- `AZURE_AD_CLIENT_ID`
+- `AZURE_AD_CLIENT_SECRET`
+
+#### Separate ATS Database
+If `ATS_DB_HOST` or `ATS_DB_NAME` is set, all must be set:
+- `ATS_DB_HOST`, `ATS_DB_PORT`, `ATS_DB_NAME`
+- `ATS_DB_USER`, `ATS_DB_PASSWORD`
+
+#### Bearer Token Validation
+If `REQUIRE_BEARER_FOR_PUBLIC_APPLY=1`, these are required:
+- `OAUTH_TENANT_ID`
+- `OAUTH_API_AUDIENCE`
+
+### 💡 Recommended (Optional)
+These generate warnings if missing:
+- `FILES_SIGNING_SECRET` - Uses SESSION_SECRET as fallback (not recommended)
+- `NODE_ENV` - Defaults to development mode
+- `GOOGLE_API_KEY`, `OPENAI_API_KEY` - Disables related features
+
+## Setup Instructions
+
+1. **Copy the example file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Fill in required values:**
+   Edit `.env` and set at minimum:
+   - `SESSION_SECRET` (generate with: `openssl rand -hex 32`)
+   - Database credentials
+
+3. **Start the application:**
+   ```bash
+   npm start
+   ```
+
+4. **Check startup output:**
+   - ✅ Green checkmark = All validations passed
+   - ⚠️ Yellow warnings = Optional variables missing
+   - ❌ Red errors = Required variables missing (app will exit)
+
+## Example Output
+
+### Success with warnings:
+```
+⚠️  Environment validation warnings:
+   • FILES_SIGNING_SECRET not set, falling back to SESSION_SECRET (not recommended for production)
+   • NODE_ENV not set, defaulting to development mode
+   • GOOGLE_API_KEY not set, related features may be disabled
+
+✅ Environment validation passed
+Server listening on port 3000
+```
+
+### Validation failure:
+```
+❌ Environment validation failed:
+   • SESSION_SECRET is required but not set
+   • DB_HOST is required but not set
+   • DB_PASSWORD is required but not set
+
+Set these variables in your .env file or deployment environment.
+```
+
+## Production Deployment
+
+### Docker/Kubernetes
+Pass environment variables via deployment config:
+```yaml
+env:
+  - name: SESSION_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: app-secrets
+        key: session-secret
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-secrets
+        key: password
+```
+
+### Docker Compose
+Use `.env` file or environment section:
+```yaml
+services:
+  app:
+    environment:
+      - SESSION_SECRET=${SESSION_SECRET}
+      - DB_PASSWORD=${DB_PASSWORD}
+```
+
+## Security Best Practices
+
+1. **Never commit `.env` files** to version control
+2. **Use different secrets** for `SESSION_SECRET` and `FILES_SIGNING_SECRET`
+3. **Rotate secrets** periodically in production
+4. **Use secure secret management** (Azure Key Vault, AWS Secrets Manager, etc.)
+5. **Set `NODE_ENV=production`** in production environments
+
+## Troubleshooting
+
+### App exits immediately on startup
+Check the error output for missing required variables. Set them in `.env` and restart.
+
+### "Azure AD authentication is partially configured" warning
+Either set all three Azure AD variables or remove them all. Partial configuration won't work.
+
+### Database connection fails after validation passes
+Validation only checks that variables are **set**, not that they're **correct**. Verify:
+- Database host is reachable
+- Credentials are valid
+- Database exists
+- Network/firewall allows connection
+
+## Adding New Environment Variables
+
+When adding new required variables to the codebase:
+
+1. **Update `validateEnvironment()` function** in `app.js`
+2. **Add to `.env.example`** with documentation
+3. **Document in this file** under appropriate category
+4. **Update deployment configs** (docker-compose.yml, k8s manifests, etc.)
+
+## Related Files
+
+- `.env.example` - Template with all available variables
+- `app.js` - Contains validation logic (lines 23-135)
+- `docker-compose.yml` - Production environment configuration
+</file>
+
+<file path="graphAppClient.js">
+function isConfigured()
+function getMsal()
+⋮----
+system:
+⋮----
+async function getAppToken()
+async function graphRequest(method, url, body, extraHeaders)
+⋮----
+const resp = await axios(
+⋮----
+function graphPost(url, body, headers)
+</file>
+
+<file path="migrations/1701600000000_init-ats-schema.js">
+exports.up = (pgm) =>
+exports.down = (pgm) =>
+</file>
+
+<file path="migrations/1701700000000_add-department-icon.js">
+exports.up = (pgm) =>
+exports.down = (pgm) =>
+</file>
+
+<file path="migrations/add-icon-column.sql">
+ALTER TABLE ats.departments ADD COLUMN IF NOT EXISTS icon VARCHAR(100);
+COMMENT ON COLUMN ats.departments.icon IS 'Phosphor icon class name (e.g., ph-briefcase, ph-users)';
+SELECT column_name, data_type, character_maximum_length, is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'ats'
+  AND table_name = 'departments'
+  AND column_name = 'icon';
+</file>
+
+<file path="multiTenant.js">
+function buildPoolConfig(appId)
+function initPools(appIds)
+async function shutdownPools(pools)
+</file>
+
+<file path="README.md">
+# ATS Backend
+
+Express + PostgreSQL backend with Azure AD (OIDC) authentication.
+
+## Tech Stack
+* Node.js / Express
+* PostgreSQL (`pg`)
+* Azure AD OpenID Connect (`@azure/msal-node`)
+* Sessions (`express-session`)
+* Swagger Docs (`swagger-jsdoc`, `swagger-ui-express`)
+
+## Prerequisites
+* Node.js 18+
+* Docker (if running with compose)
+* Azure AD App Registration (Web)
+	* Redirect URI: `https://ats.s3protection.com/api/auth/callback`
+
+## Environment Variables
+Create a `.env` file (already gitignored):
+
+```
+SESSION_SECRET=replace_with_long_random_string
+POSTGRES_PASSWORD=your_postgres_password
+
+AZURE_AD_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+AZURE_AD_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+AZURE_AD_CLIENT_SECRET=your_client_secret_value
+AZURE_AD_REDIRECT_URI=https://ats.s3protection.com/api/auth/callback
+
+# Optional overrides
+# DB_HOST=postgres-db
+# DB_PORT=5432
+# DB_NAME=applicationDashboard
+# DB_USER=admin
+# SWAGGER_SERVER_URL=https://ats.s3protection.com/api
+```
+
+Never commit real secrets. For production use a secrets manager (Azure Key Vault, etc.) or Docker/Swarm/K8s secrets.
+
+## Install
+```
+npm install
+```
+
+## Development
+```
+npm run dev
+```
+Server runs on `http://localhost:3000`.
+
+### API Docs (Swagger UI)
+Swagger endpoints require an authenticated session (log in via `/auth/login` first).
+
+After the server starts, visit:
+
+- Global Swagger UI (core endpoints only): `http://localhost:3000/docs`
+- Global OpenAPI JSON: `http://localhost:3000/openapi.json`
+- ATS Swagger UI: `http://localhost:3000/ats/docs`
+- ATS OpenAPI JSON: `http://localhost:3000/ats/openapi.json`
+
+If the server runs behind a reverse proxy or on a public domain, you can set the base server URL displayed in the docs via environment variable:
+
+```
+SWAGGER_SERVER_URL=https://ats.s3protection.com/api
+```
+
+## Key Routes
+* `GET /` – basic info & auth state
+* `GET /health` – DB connectivity check
+* `GET /docs` – Swagger UI
+* `GET /openapi.json` – OpenAPI spec
+* `GET /auth/login` – Start Azure AD login
+* `GET /auth/callback` – Azure AD redirect
+* `GET /auth/success` – Auth success JSON (requires session)
+* `POST /auth/logout` – Destroy session
+* `GET /api/user` – Authenticated user details
+
+## Docker
+Build & run (env file automatically read by compose if exported or passed):
+
+```
+docker compose up --build -d
+```
+
+Logs:
+```
+docker logs -f ats-server
+```
+
+## Session & Security Notes
+* Ensure HTTPS in production so secure cookies are honored.
+* Rotate `SESSION_SECRET` and Azure AD client secret periodically.
+* Consider enabling Helmet & morgan (already commented in `app.js`).
+
+## Troubleshooting
+* Auth redirect mismatch – verify Redirect URI in Azure portal matches `AZURE_AD_REDIRECT_URI`.
+* 500 on `/health` – check DB env vars or network connectivity.
+* Session not persisting – confirm cookies allowed and proxy `trust proxy` is correct.
+
+## License
+Internal / Proprietary (update if needed).
+</file>
+
+<file path="routes/apps/ats/applications.js">
+function initApplications(deps)
+async function getActorUserId(req)
+function applyPublicCors(req, res)
+⋮----
+// Candidate upsert with form fields
+⋮----
+// Update existing candidate with new form data
+⋮----
+// Application insert (dynamic)
+⋮----
+const push = (c, v) =>
+⋮----
+// Emit real-time event for new application
+</file>
+
+<file path="routes/apps/ats/dashboard.js">
+
+</file>
+
+<file path="routes/apps/ats/preferences.js">
+const qualify = (name)
+</file>
+
+<file path="routes/apps/ats/README.md">
+# ATS Routes - Modular Structure
+
+This directory contains the refactored, modular version of the ATS API routes.
+
+## Background
+
+The original `ats.js` file was 376KB with 10,800+ lines - a massive monolith that was difficult to maintain, test, and navigate. This refactoring splits it into logical, focused modules.
+
+## Module Structure
+
+```
+routes/apps/ats/
+├── index.js        # Router orchestrator (mounts all sub-routers)
+├── helpers.js      # Shared utilities, constants, middleware
+├── candidates.js   # /candidates/* routes
+├── jobs.js         # /jobs/* routes
+├── applications.js # /applications/* routes
+├── admin.js        # /admin/* routes
+├── graph.js        # /graph/*, /meetings, /emails/* routes
+├── reports.js      # /reports/* routes
+├── skills.js       # /skills/* and candidate skills routes
+├── preferences.js  # /preferences/* routes
+├── dashboard.js    # /dashboard/* routes
+├── public.js       # /public/* routes (no auth)
+├── rejection.js    # /rejection-feedback/* and rejection email routes
+└── README.md       # This file
+```
+
+## Migration Status
+
+| Module | Status | Lines | Routes |
+|--------|--------|-------|--------|
+| helpers.js | ✅ Complete | 372 | N/A (utilities) |
+| candidates.js | ✅ Complete | 826 | 15 routes |
+| jobs.js | ✅ Complete | 582 | 12 routes |
+| applications.js | ✅ Complete | 520 | 10 routes |
+| admin.js | ✅ Complete | 1,120 | 26 routes |
+| graph.js | ✅ Complete | 526 | 12 routes |
+| reports.js | ✅ Complete | 521 | 3 routes |
+| skills.js | ✅ Complete | 184 | 5 routes |
+| preferences.js | ✅ Complete | 180 | 3 routes |
+| dashboard.js | ✅ Complete | 103 | 2 routes |
+| public.js | ✅ Complete | 634 | 4 routes |
+| rejection.js | ✅ Complete | 583 | 6 routes |
+| index.js | ✅ Complete | 133 | N/A (orchestrator) |
+
+**Total: 6,284 lines in modular files**
+
+## Module Details
+
+### helpers.js
+Shared utilities, constants, and middleware used across all route modules.
+
+**Constants:**
+- `DEFAULT_SCHEMA` - Database schema name
+- `PEOPLE_TABLE`, `PEOPLE_PK` - Candidates table config
+- `APP_TABLE`, `APP_PK` - Applications table config
+- `FILES_ROOT`, `FILES_PUBLIC_URL` - File storage paths
+- `ADMIN_EMAILS` - Admin user list
+
+**Functions:**
+- `getOpenAIClient()` - Lazy-loaded OpenAI client
+- `requireAdmin(req, res, next)` - Admin middleware
+- `isAdmin(req)` - Check if user is admin
+- `getPrimaryEmail(req)` - Get user's primary email
+- `ensureDir(dir)` - Create directory recursively
+- `safeFileName(name)` - Sanitize filename
+- `safeJoin(root, rel)` - Safe path join (prevents traversal)
+- `extractTextFromBuffer(buf, filename, contentType)` - Extract text from PDF/DOCX
+- `extractMentions(text)` - Extract @mentions from text
+- `saveMentions(...)` - Save mentions to database
+- `getTableColumns(db, tableName)` - Get table column names
+- `ensureAdminTables(db)` - Ensure admin-related tables exist
+
+### candidates.js
+Handles all `/candidates/*` routes (15 endpoints).
+
+- List candidates with filtering, sorting, pagination
+- Search candidates (full-text, semantic)
+- CRUD operations (create, read, update, delete)
+- Archive/restore candidates
+- AI scoring and score retrieval
+- Interview questions generation
+
+### jobs.js
+Handles all `/jobs/*` routes (12 endpoints).
+
+- List job listings with filtering
+- Public job listing endpoint
+- CRUD operations
+- AI-assisted job description generation
+- Archive/restore jobs
+- Candidates per job statistics
+- AI ranking of candidates for jobs
+
+### applications.js
+Handles all `/applications/*` routes (10 endpoints).
+
+- List applications
+- Delete applications
+- File uploads (resume, cover letter)
+- Attachment management (list, upload, delete)
+
+### admin.js
+Handles all `/admin/*` routes (26 endpoints).
+
+- Department CRUD and member management
+- Department notes and ideas
+- Notification settings
+- Candidate flags management
+- Bulk delete operations
+- User management (CRUD, roles)
+- Role management
+
+### graph.js
+Handles MS Graph integration (12 endpoints).
+
+**Auth routes (`/graph/*`):**
+- OAuth login flow
+- Token callback
+- Auth status check
+
+**Calendar routes:**
+- `/meetings` - List calendar events
+- `/graph/getSchedule` - Get free/busy schedules
+- `/graph/createEvent` - Create calendar events
+
+**Email routes (`/emails/*`):**
+- List email threads
+- Get full thread
+- Send new email
+- Reply to email
+
+**User routes:**
+- `/graph/users` - Search users via MS Graph
+
+### reports.js
+Handles report generation (3 endpoints).
+
+- `GET /reports` - List available reports
+- `POST /reports` - Generate a new report
+- `GET /reports/:id/download` - Download a report
+
+**Available report types:**
+- `pipeline` - Hiring Pipeline Report
+- `recruiter` - Recruiter Performance Report
+- `time-to-hire` - Time to Hire Report
+- `source` - Source Effectiveness Report
+
+### skills.js
+Handles skills management (5 endpoints).
+
+- `GET /skills` - List all skills
+- `POST /skills` - Create a new skill
+- `GET /candidates/:id/skills` - List skills for a candidate
+- `POST /candidates/skills/batch` - Batch fetch skills for multiple candidates
+- `POST /candidates/:id/skills` - Add/update a candidate's skill
+
+### preferences.js
+Handles user preferences (3 endpoints).
+
+- `GET /preferences` - Get user preferences
+- `PUT /preferences` - Update all preferences
+- `PATCH /preferences/:section` - Update specific section
+
+### dashboard.js
+Handles dashboard statistics (2 endpoints).
+
+- `GET /dashboard/stats` - Get dashboard statistics (candidates, applications, interviews, hires)
+- `GET /dashboard/recent-activity` - Get recent application activity
+
+### public.js
+Handles public endpoints without authentication (4 endpoints).
+
+- `POST /public/applications` - Submit a job application
+- `POST /public/applications/:id/upload/resume` - Upload resume
+- `POST /public/applications/:id/upload/cover-letter` - Upload cover letter
+- `POST /public/linkedin/init` - Initialize LinkedIn OAuth
+- `POST /public/linkedin/auth` - Exchange LinkedIn code for profile
+
+### rejection.js
+Handles rejection emails and candidate feedback (6 endpoints).
+
+- `POST /send-rejection-email` - Send rejection email to candidate
+- `POST /rejection-feedback/create` - Create feedback request token
+- `GET /rejection-feedback/pending` - List pending feedback requests
+- `POST /rejection-feedback/respond/:id` - Respond to feedback request
+- `GET /public/rejection-feedback/request/:token` - Display feedback form
+- `POST /public/rejection-feedback/submit/:token` - Submit feedback
+
+## Usage
+
+### Initialization
+
+The router requires initialization with dependencies:
+
+```javascript
+const atsRouter = require("./routes/apps/ats");
+
+// Initialize with dependencies
+atsRouter.createRouter({
+  buildCandidateVM,
+  buildCandidateScoringContext,
+  getLatestCandidateScore,
+  generateAndStoreCandidateScore,
+  enqueueCandidateScore,
+  getExtractedTextForUrl,
+  mapStatusToStage,
+  titleCase,
+  buildSignedUrl,
+  graphMsal,
+  emailService,
+});
+
+// Mount the router
+app.use("/api/ats", atsRouter);
+```
+
+### Testing Individual Modules
+
+To test modules in isolation:
+
+```javascript
+const express = require("express");
+const candidatesRouter = require("./routes/apps/ats/candidates");
+
+const app = express();
+app.use("/candidates", candidatesRouter);
+app.listen(4000);
+```
+
+## Route Mapping
+
+The routes maintain the same paths as before:
+
+| Old Path in ats.js | New Location |
+|-------------------|--------------|
+| `router.get("/candidates", ...)` | `candidates.js` → `router.get("/", ...)` |
+| `router.get("/jobs", ...)` | `jobs.js` → `router.get("/", ...)` |
+| `router.post("/admin/users", ...)` | `admin.js` → `router.post("/users", ...)` |
+| `router.get("/graph/login", ...)` | `graph.js` → `router.get("/graph/login", ...)` |
+| `router.get("/reports", ...)` | `reports.js` → `router.get("/", ...)` |
+| `router.get("/skills", ...)` | `skills.js` → `router.get("/", ...)` |
+| `router.get("/preferences", ...)` | `preferences.js` → `router.get("/", ...)` |
+| `router.get("/dashboard/stats", ...)` | `dashboard.js` → `router.get("/stats", ...)` |
+| `router.post("/public/applications", ...)` | `public.js` → `router.post("/applications", ...)` |
+| `router.post("/send-rejection-email", ...)` | `rejection.js` → `router.post("/send-rejection-email", ...)` |
+
+The index.js orchestrator mounts each module at the appropriate base path.
+
+## Benefits of This Structure
+
+1. **Maintainability** - Each file focuses on one domain
+2. **Testability** - Modules can be tested in isolation
+3. **Navigation** - Easy to find relevant code
+4. **Code Review** - Smaller, focused changesets
+5. **Parallel Work** - Multiple developers can work on different modules
+6. **Performance** - Potential for lazy loading in the future
+</file>
+
+<file path="routes/apps/ats/rejection.js">
+function initRejection(deps)
+</file>
+
+<file path="routes/apps/ats/reports.js">
+function sanitizeOwnerKey(value)
+async function cleanupReport(id)
+function registerReport(meta)
+function listActiveReportsForOwner(ownerEmail)
+async function buildPipelineWorksheet(workbook, db)
+async function buildRecruiterWorksheet(workbook, db)
+async function buildTimeToHireWorksheet(workbook, db, limit = 200)
+async function buildSourceWorksheet(workbook, db)
+⋮----
+build: (workbook, db, filters)
+⋮----
+async function generateWorkbookForReport({
+  type,
+  db,
+  filters = {},
+  actorEmail,
+  actorName,
+})
+</file>
+
+<file path="routes/apps/ats/skills.js">
+
+</file>
+
+<file path="services/interviewReminderScheduler.js">
+class InterviewReminderScheduler
+⋮----
+start()
+stop()
+async checkAndSendReminders()
+async getAccessToken()
+async fetchAllUsers(accessToken)
+async fetchUpcomingMeetingsForUser(accessToken, userId, startTime, endTime)
+async fetchUpcomingMeetings(accessToken, startTime, endTime)
+async getCandidateAttendeesForMeeting(meeting)
+async sendReminderIfNotSent(meeting, candidateEmail, accessToken)
+async triggerManualCheck()
+</file>
+
+<file path="swagger.js">
+function buildSpec()
+function buildSpecForApp(appId)
+</file>
+
+<file path=".dockerignore">
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.gitignore
+README.md
+</file>
+
+<file path=".env.example">
+# =============================================================================
+# Application Management Dashboard - Backend Environment Variables
+# =============================================================================
+# Copy this file to .env and fill in your values
+# REQUIRED variables are marked with [REQUIRED]
+# OPTIONAL variables have default values or are feature-specific
+
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
+PORT=3000
+NODE_ENV=production
+VERBOSE_APP_DEBUG=0
+
+# =============================================================================
+# SECURITY [REQUIRED]
+# =============================================================================
+# Session secret for cookie signing (min 32 random characters)
+SESSION_SECRET=
+
+# File signing secret (defaults to SESSION_SECRET if not set)
+# Recommended: use a different secret for production
+FILES_SIGNING_SECRET=
+
+# =============================================================================
+# DATABASE CONFIGURATION [REQUIRED]
+# =============================================================================
+# Main database connection
+DB_HOST=postgres-db
+DB_PORT=5432
+DB_NAME=applicationDashboard
+DB_USER=admin
+DB_PASSWORD=
+
+# Alternative: Use POSTGRES_PASSWORD (will be used as fallback for DB_PASSWORD)
+POSTGRES_PASSWORD=
+
+# Database schema (optional, defaults to 'public')
+DB_SCHEMA=public
+
+# =============================================================================
+# MULTI-TENANT CONFIGURATION
+# =============================================================================
+# Comma-separated list of app IDs (auto-discovered if not set)
+APPS=ats
+DEFAULT_APP=ats
+
+# ATS Database (if using separate database for ATS app)
+# If these are set, ALL of them must be provided
+ATS_DB_HOST=
+ATS_DB_PORT=5432
+ATS_DB_NAME=
+ATS_DB_USER=
+ATS_DB_PASSWORD=
+
+# =============================================================================
+# MASTER DATABASE (Multi-Tenant Mode)
+# =============================================================================
+# Master database contains tenant and user allowlist tables
+# If not set, multi-tenant features are disabled (legacy single-tenant mode)
+MASTER_DB_NAME=ats-master
+MASTER_DB_HOST=
+MASTER_DB_PORT=5432
+MASTER_DB_USER=
+MASTER_DB_PASSWORD=
+MASTER_DB_POOL_MAX=5
+
+# Tenant database pool settings
+TENANT_DB_POOL_MAX=10
+
+# Base domain for tenant subdomains (e.g., mys3tech.ats.s3protection.com)
+TENANT_BASE_DOMAIN=ats.s3protection.com
+
+# =============================================================================
+# AZURE AD AUTHENTICATION (Delegated Auth for Dashboard)
+# =============================================================================
+# All three are required for Azure AD login to work
+AZURE_AD_TENANT_ID=
+AZURE_AD_CLIENT_ID=
+AZURE_AD_CLIENT_SECRET=
+AZURE_AD_REDIRECT_URI=https://ats.s3protection.com/api/auth/callback
+
+# =============================================================================
+# AZURE OAUTH (Service-to-Service / Client Credentials)
+# =============================================================================
+# Used by public site to authenticate API calls
+OAUTH_TENANT_ID=
+OAUTH_API_AUDIENCE=
+OAUTH_REQUIRED_ROLE=
+REQUIRE_BEARER_FOR_PUBLIC_APPLY=0
+
+# =============================================================================
+# CROSS-SITE SESSION CONFIGURATION
+# =============================================================================
+# Set to 1 if frontend is on different domain (requires HTTPS)
+CROSS_SITE_SESSION=0
+
+# =============================================================================
+# FILE STORAGE
+# =============================================================================
+FILES_ROOT=/app/app/uploads
+FILES_PUBLIC_URL=https://ats.s3protection.com/api/files
+MAX_UPLOAD_MB=25
+
+# File search and upload debugging
+DEBUG_SEARCH=0
+DEBUG_UPLOADS=0
+
+# =============================================================================
+# API KEYS (Optional - features disabled if not set)
+# =============================================================================
+
+# OpenAI for AI features
+OPENAI_API_KEY=
+
+# =============================================================================
+# EMAIL CONFIGURATION
+# =============================================================================
+# Mailgun (for email notifications)
+MAILGUN_API_KEY=
+MAILGUN_DOMAIN=
+
+# Microsoft Graph Push Notifications (optional)
+GRAPH_PUSH_ENABLED=0
+GRAPH_NOTIFY_MAILBOX=
+
+# =============================================================================
+# LINKEDIN OAUTH (for job applications)
+# =============================================================================
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+
+# =============================================================================
+# CONNECTWISE INTEGRATION (optional)
+# =============================================================================
+CW_CLIENT_ID=
+CW_CLIENT_SECRET=
+CW_REDIRECT_URI=
+CW_SCOPE=company
+
+# =============================================================================
+# CORS CONFIGURATION
+# =============================================================================
+# Comma-separated list of allowed origins for public submissions
+PUBLIC_APP_ALLOWED_ORIGIN=
+
+# =============================================================================
+# SWAGGER/API DOCUMENTATION
+# =============================================================================
+SWAGGER_SERVER_URL=https://ats.s3protection.com/api
+
+# =============================================================================
+# DEBUGGING
+# =============================================================================
+# Enable detailed authentication debugging (0 or 1)
+AUTH_DEBUG=0
+</file>
+
+<file path="migrations/create-app-user.sql">
+CREATE TABLE IF NOT EXISTS public.app_user (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    display_name VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_app_user_email ON public.app_user(email);
+CREATE OR REPLACE FUNCTION update_app_user_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS app_user_updated_at ON public.app_user;
+CREATE TRIGGER app_user_updated_at
+    BEFORE UPDATE ON public.app_user
+    FOR EACH ROW
+    EXECUTE FUNCTION update_app_user_updated_at();
+</file>
+
+<file path="routes/apps/ats/jobs.js">
+function initJobs(deps)
+async function generateNextRequisitionId(db)
+⋮----
+const safeStr = (v, max = 4000)
+const cleanReq = (v)
+⋮----
+const coerceInt = (v)
+</file>
+
+<file path="routes/interviewReminders.js">
+function initializeRoutes(pools)
+function generateResponsePage(
+/**
+ * Generate cancellation form
+ */
+function generateCancellationForm(token, reminder)
+/**
+ * Generate reschedule form
+ */
+function generateRescheduleForm(token, reminder)
+</file>
+
+<file path="services/aiSummaryService.js">
+function getOpenAIClient()
+async function generateChatroomSummary(data)
+function isConfigured()
+</file>
+
+<file path="sql/add-resume-columns-tenant.sql">
+ALTER TABLE IF EXISTS public.applications
+  ADD COLUMN IF NOT EXISTS resume_url TEXT;
+ALTER TABLE IF EXISTS public.applications
+  ADD COLUMN IF NOT EXISTS cover_letter_url TEXT;
+ALTER TABLE IF EXISTS ats.applications
+  ADD COLUMN IF NOT EXISTS resume_url TEXT;
+ALTER TABLE IF EXISTS ats.applications
+  ADD COLUMN IF NOT EXISTS cover_letter_url TEXT;
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'applications'
+  AND column_name IN ('resume_url', 'cover_letter_url');
+</file>
+
+<file path="sql/migrations/add_api_keys_and_questions.sql">
+CREATE TABLE IF NOT EXISTS tenant_api_keys (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  api_key VARCHAR(64) NOT NULL UNIQUE,
+  api_key_prefix VARCHAR(12) NOT NULL,
+  name VARCHAR(100) DEFAULT 'Default Key',
+  description TEXT,
+  allowed_domains TEXT[],
+  rate_limit_per_minute INTEGER DEFAULT 100,
+  is_active BOOLEAN DEFAULT true,
+  last_used_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  revoked_at TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS tenant_application_questions (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  question_key VARCHAR(100) NOT NULL,
+  question_type VARCHAR(50) NOT NULL,
+  label TEXT NOT NULL,
+  helper_text TEXT,
+  placeholder TEXT,
+  options JSONB DEFAULT '[]',
+  is_required BOOLEAN DEFAULT false,
+  min_length INTEGER,
+  max_length INTEGER,
+  display_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_key ON tenant_api_keys(api_key);
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_tenant ON tenant_api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_active ON tenant_api_keys(tenant_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_tenant_questions_tenant ON tenant_application_questions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_questions_active ON tenant_application_questions(tenant_id, is_active);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_tenant_questions_updated_at') THEN
+    CREATE TRIGGER update_tenant_questions_updated_at
+      BEFORE UPDATE ON tenant_application_questions
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+END
+$$;
+SELECT 'tenant_api_keys created' AS status WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenant_api_keys');
+SELECT 'tenant_application_questions created' AS status WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenant_application_questions');
+</file>
+
+<file path="sql/migrations/add_tenant_question_responses.sql">
+CREATE TABLE IF NOT EXISTS application_question_responses (
+  id SERIAL PRIMARY KEY,
+  application_id INTEGER REFERENCES applications(application_id) ON DELETE CASCADE,
+  question_key VARCHAR(100) NOT NULL,
+  question_label TEXT,
+  response_value TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(application_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_app_question_responses_app
+  ON application_question_responses(application_id);
+CREATE INDEX IF NOT EXISTS idx_app_question_responses_key
+  ON application_question_responses(question_key);
+SELECT 'application_question_responses created' AS status
+WHERE EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_name = 'application_question_responses'
+);
+</file>
+
+<file path="routes/apps/ats/public.js">
+function initPublic(deps)
+function applyPublicCors(req, res)
+function slugify(s)
+function applyApiKeyCors(req, res)
+⋮----
+function pickExt(originalName, contentType)
+⋮----
+async function exchangeLinkedInCodeForToken(clientId, clientSecret, code, redirectUri)
+async function getLinkedInProfileData(accessToken)
+function getOpenIdConnectFullName(profileData)
+// ==================== PUBLIC APPLICATIONS ====================
+// POST /public/applications - Submit a public job application
+⋮----
+const push = (col, val) =>
+⋮----
+// Create initial stage
+⋮----
+// Emit real-time event
+</file>
+
+<file path="services/emailService.js">
+class EmailService
+⋮----
+initialize()
+isConfigured()
+async sendMail(
+async sendViaMailgun(
+async sendViaSMTP(
+async sendMailAsUser(
+async sendInterviewReminder(reminder)
+generateReminderHtml(
+async sendOrganizerNotification(
+/**
+     * Send candidate rejection email
+     * @param {Object} options - Rejection email options
+     * @param {string} options.candidateEmail - Candidate's email
+     * @param {string} options.candidateName - Candidate's name
+     * @param {string} options.jobTitle - Job title they applied for
+     * @param {string} options.rejectionReason - Reason for rejection
+     * @param {boolean} options.shouldArchive - Whether candidate will be archived
+     * @param {string} options.feedbackToken - Unique token for feedback requests
+     * @returns {Promise<Object>} Send result
+     */
+async sendRejectionEmail(
+generateRejectionHtml(
+async sendApplicationConfirmation(
+generateApplicationConfirmationHtml(
+async sendMailWithAttachment(
+async sendMentionNotification(
+async sendBatchedMentionNotification(
+generateMentionNotificationHtml(
+stripHtml(html)
+/**
+     * Verify the email configuration
+     */
+async verify()
+</file>
+
+<file path="sql/master-schema.sql">
+CREATE TABLE tenants (
+  id SERIAL PRIMARY KEY,
+  company_name VARCHAR(255) NOT NULL,
+  subdomain VARCHAR(100) UNIQUE NOT NULL,
+  custom_domain VARCHAR(255) UNIQUE,
+  db_name VARCHAR(100) NOT NULL UNIQUE,
+  db_host VARCHAR(255) DEFAULT 'postgres',
+  db_port INTEGER DEFAULT 5432,
+  auth_type VARCHAR(50) DEFAULT 'shared',
+  microsoft_client_id VARCHAR(255),
+  microsoft_client_secret VARCHAR(500),
+  microsoft_tenant_id VARCHAR(255),
+  email_domains TEXT[],
+  allow_auto_provision BOOLEAN DEFAULT false,
+  consent_granted BOOLEAN DEFAULT false,
+  consent_granted_at TIMESTAMP,
+  subscription_tier VARCHAR(50) DEFAULT 'standard',
+  max_seats INTEGER DEFAULT 5,
+  price_per_seat DECIMAL(10,2) DEFAULT 50.00,
+  billing_email VARCHAR(255),
+  stripe_customer_id VARCHAR(255),
+  stripe_subscription_id VARCHAR(255),
+  logo_url VARCHAR(500),
+  primary_color VARCHAR(7) DEFAULT '#0066CC',
+  secondary_color VARCHAR(7) DEFAULT '#333333',
+  favicon_url VARCHAR(500),
+  custom_css TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT true
+);
+CREATE TABLE tenant_users (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  email VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  role VARCHAR(50) DEFAULT 'user',
+  microsoft_oid VARCHAR(255),
+  is_active BOOLEAN DEFAULT true,
+  invited_by INTEGER REFERENCES tenant_users(id),
+  invited_at TIMESTAMP,
+  last_login TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_id, email)
+);
+CREATE TABLE tenant_access_log (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER REFERENCES tenants(id),
+  user_email VARCHAR(255),
+  action VARCHAR(50),
+  ip_address INET,
+  details JSONB DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS session (
+  sid VARCHAR NOT NULL COLLATE "default" PRIMARY KEY,
+  sess JSON NOT NULL,
+  expire TIMESTAMP(6) NOT NULL
+);
+CREATE TABLE tenant_api_keys (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  api_key VARCHAR(64) NOT NULL UNIQUE,
+  api_key_prefix VARCHAR(12) NOT NULL,
+  name VARCHAR(100) DEFAULT 'Default Key',
+  description TEXT,
+  allowed_domains TEXT[],
+  rate_limit_per_minute INTEGER DEFAULT 100,
+  is_active BOOLEAN DEFAULT true,
+  last_used_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  revoked_at TIMESTAMP
+);
+CREATE TABLE tenant_application_questions (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  question_key VARCHAR(100) NOT NULL,
+  question_type VARCHAR(50) NOT NULL,
+  label TEXT NOT NULL,
+  helper_text TEXT,
+  placeholder TEXT,
+  options JSONB DEFAULT '[]',
+  is_required BOOLEAN DEFAULT false,
+  min_length INTEGER,
+  max_length INTEGER,
+  display_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(tenant_id, question_key)
+);
+CREATE INDEX idx_tenant_subdomain ON tenants(subdomain);
+CREATE INDEX idx_tenant_custom_domain ON tenants(custom_domain);
+CREATE INDEX idx_tenant_stripe_customer ON tenants(stripe_customer_id);
+CREATE INDEX idx_tenant_users_email ON tenant_users(tenant_id, email);
+CREATE INDEX idx_tenant_users_microsoft_oid ON tenant_users(microsoft_oid);
+CREATE INDEX idx_tenant_users_active ON tenant_users(tenant_id, is_active);
+CREATE INDEX idx_session_expire ON session(expire);
+CREATE INDEX idx_access_log_tenant ON tenant_access_log(tenant_id);
+CREATE INDEX idx_access_log_created ON tenant_access_log(created_at);
+CREATE INDEX idx_tenant_api_keys_key ON tenant_api_keys(api_key);
+CREATE INDEX idx_tenant_api_keys_tenant ON tenant_api_keys(tenant_id);
+CREATE INDEX idx_tenant_api_keys_active ON tenant_api_keys(tenant_id, is_active);
+CREATE INDEX idx_tenant_questions_tenant ON tenant_application_questions(tenant_id);
+CREATE INDEX idx_tenant_questions_active ON tenant_application_questions(tenant_id, is_active);
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ language 'plpgsql';
+CREATE TRIGGER update_tenants_updated_at BEFORE UPDATE ON tenants
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_tenant_users_updated_at BEFORE UPDATE ON tenant_users
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_tenant_questions_updated_at BEFORE UPDATE ON tenant_application_questions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+</file>
+
+<file path="dbManager.js">
+class DbManager
+⋮----
+async initialize()
+isInitialized()
+getMasterDb()
+async getTenantBySubdomain(subdomain)
+⋮----
+// Check cache first
+⋮----
+// Query master database - check both subdomain and custom_domain
+⋮----
+// Map db_name to database_name for compatibility
+⋮----
+// Update cache
+⋮----
+/**
+   * Check if a user is allowed to access a tenant
+   * Returns user record or null if not allowed
+   */
+async checkUserAccess(tenantId, email, microsoftOid = null)
+⋮----
+// First try to find by microsoft_oid if provided (faster)
+⋮----
+// Fall back to email lookup
+⋮----
+/**
+   * Get or create a database pool for a tenant
+   */
+async getTenantDb(tenantId)
+⋮----
+// Return cached pool if exists
+⋮----
+// Check if pool creation previously failed (avoid retrying for 5 minutes)
+const RETRY_DELAY = 5 * 60 * 1000; // 5 minutes
+⋮----
+// Return null instead of throwing - let caller fall back gracefully
+⋮----
+// Prevent race conditions during pool creation
+⋮----
+// After waiting, check if pool was created or failed
+⋮----
+// Pool creation failed, return null for graceful fallback
+⋮----
+// Create lock promise
+⋮----
+// Get tenant config
+⋮----
+async logAccess(tenantId, email, action, req, details =
+async updateLastLogin(tenantId, email, options =
+/**
+   * Get all users for a tenant (for admin panel)
+   */
+async getTenantUsers(tenantId)
+/**
+   * Add a user to a tenant's allowlist
+   */
+async addTenantUser(tenantId, email, role = 'user', invitedById = null, firstName = null, lastName = null)
+async deactivateTenantUser(tenantId, userId)
+async _preloadTenantCache()
+async refreshTenantCache()
+async shutdown()
+</file>
+
+<file path="middleware/apiKeyAuth.js">
+async function validateApiKey(apiKey)
+function isOriginAllowed(allowedDomains, origin)
+function extractApiKey(req)
+async function requireApiKey(req, res, next)
+async function optionalApiKey(req, res, next)
+function generateApiKey()
+</file>
+
+<file path="routes/apps/ats/misc.js">
+function initMisc(deps)
+⋮----
+// Build query with job-level access filtering for non-admins
+⋮----
+// Admins see all applicants
+⋮----
+// Non-admins: filter by job access
+⋮----
+// Find application
+⋮----
+// Get application columns
+⋮----
+function generateRecommendationReason(candidate, job, matchScore)
+</file>
+
+<file path="services/pdfService.js">
+function hexToRgb(hex)
+function darkenColor(hex, percent = 20)
+async function fetchImageBuffer(url)
+function drawScoreBar(doc, x, y, score, width = 150, height = 12, primaryColor)
+function getScoreLabel(score)
+async function generateCandidateProfilePDF(data, branding, options =
+async function generateChatroomTranscriptPDF(data, branding, options =
+⋮----
+// Process @note mentions if needed
+⋮----
+// Draw message box
+⋮----
+// Background box
+⋮----
+async function generateAISummaryPDF(data, branding)
+</file>
+
+<file path="public/embed/widget.js">
+function detectBaseUrl()
+⋮----
+// Method 2: Find script by src attribute
+⋮----
+// Method 3: Fallback to production URL
+⋮----
+function htmlEscape(str)
+function stripHtml(html)
+class PowerHRJobsWidget
+⋮----
+async init()
+injectStyles()
+applyTheme()
+async apiFetch(endpoint, options =
+async fetchBranding()
+async fetchJobs()
+async fetchQuestions(jobId)
+render(html)
+showLoading()
+showError(message)
+renderJobList()
+attachListeners()
+getSummary(job)
+getJob(jobId)
+showJobDetail(jobId)
+⋮----
+const addSection = (title, content) =>
+⋮----
+async showApplyForm(jobId)
+renderQuestions(questions)
+renderQuestion(q)
+⋮----
+default: // text
+⋮----
+renderDefaultQuestions()
+⋮----
+// Fallback questions if tenant has none configured
+⋮----
+attachFormListeners()
+⋮----
+// Submit handling
+⋮----
+async submitApplication(form)
+showSuccess()
+showModal(content)
+updateModal(content)
+closeModal()
+⋮----
+function autoInit()
+⋮----
+init: (config) =>
+</file>
+
+<file path="routes/apps/ats/graph.js">
+function initGraph(deps)
+function getGraphToken(req)
+function requireGraphAuth(req, res, next)
+⋮----
+// Fallback to Users API if People API didn't return results
+⋮----
+const involves = (m) =>
+⋮----
+// Group by conversationId
+⋮----
+// Sort each thread by receivedDateTime asc
+⋮----
+// Sort threads by latest activity desc
+</file>
+
+<file path="routes/apps/ats/index.js">
+function initRouters(dependencies =
+</file>
+
+<file path="routes/apps/ats/share.js">
+function initShare(deps)
+async function generateProfessionalSummary(candidateData, combinedText, score)
+function extractResumeHighlights(combinedText, maxLength = 1500)
+function getTenantBranding(req)
+async function getInterviewQuestions(db, candidateId)
+async function aggregateCandidateData(db, candidateId, options =
+</file>
+
+<file path="config.js">
+
+</file>
+
+<file path="package.json">
+{
+  "name": "application-management-dashboard-backend",
+  "version": "1.3.3",
+  "description": "Express.js application with PostgreSQL",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "migrate": "node-pg-migrate",
+    "migrate:create": "node-pg-migrate create"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.8.1",
+    "axios": "^1.7.2",
+    "connect-pg-simple": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "express-session": "^1.18.2",
+    "form-data": "^4.0.4",
+    "jsonrepair": "^3.4.0",
+    "jwks-rsa": "^3.2.0",
+    "mailgun.js": "^12.1.0",
+    "mammoth": "^1.6.0",
+    "mime-types": "^2.1.35",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^2.7.0",
+    "node-pg-migrate": "^6.2.2",
+    "nodemailer": "^7.0.6",
+    "openai": "^6.0.0",
+    "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.11.3",
+    "pg-pool": "^3.6.1",
+    "socket.io": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+</file>
+
+<file path="routes/apps/ats/helpers.js">
+function getOpenAIClient()
+⋮----
+const qualify = (name)
+⋮----
+function getAdminEmails()
+async function refreshAdminCache(db)
+function shouldRefreshAdminCache()
+⋮----
+function ensureDir(dir)
+function safeFileName(name)
+function safeJoin(root, rel)
+function slugify(s)
+function pickExt(originalName, contentType)
+function isAdmin(req)
+⋮----
+// Check against combined env + database admin list
+⋮----
+async function isAdminAsync(req)
+function requireAdmin(req, res, next)
+function getPrimaryEmail(req)
+function sanitizeOwnerKey(value)
+function extractMentions(text)
+async function saveMentions(
+  db,
+  type,
+  referenceId,
+  mentionedEmails,
+  mentionedBy,
+  message
+)
+async function deleteMentions(db, type, referenceId)
+async function fetchMentions(db, type, referenceId)
+async function extractTextFromBuffer(buf, filename, contentType)
+// --- Database Helpers ---
+async function getTableColumns(db, tableName)
+async function ensureAdminTables(db)
+</file>
+
+<file path="routes/apps/ats/admin.js">
+generateApiKey = () =>
+</file>
+
+<file path="middleware/tenantResolver.js">
+async function lookupUserTenant(email, microsoftOid = null)
+async function resolveTenantFromSession(req, res, next)
+async function setTenantInSession(req, email, microsoftOid = null, displayName = null)
+function requireTenantAdmin(req, res, next)
+function requireTenantAccess(req, res, next)
+</file>
+
+<file path="routes/apps/ats/candidates.js">
+const defaultTitleCase = (str) =>
+async function defaultBuildCandidateVM(db, candidateId)
+⋮----
+// Questionnaire fields
+⋮----
+// Resume/cover letter
+⋮----
+// These functions need to be passed in during initialization
+⋮----
+/**
+ * Initialize the candidates router with required dependencies
+ * @param {Object} deps - Dependencies object
+ */
+function initCandidates(deps)
+// POST /candidates/search - Lightweight search over extracted resume/cover text
+⋮----
+// Optional: if a quick search query param 'q' is present, refine by resume/cover text hits
+⋮----
+const push = (k, v) =>
+⋮----
+// GET /candidates/:id/score - Get AI score
+</file>
+
+<file path="updates/latest.yml">
+version: 1.3.6
+files:
+  - url: Application Management Dashboard Setup 1.3.6.exe
+    sha512: 8kcdAD1nbfR6gQcp8TT5LBx/VpBNo8fvyn836Tj5I9N7jx1cVSFJ4sk53jXtFg/hfIRxawJ+rgmb4UU8g6RCww==
+    size: 79263088
+path: Application Management Dashboard Setup 1.3.6.exe
+sha512: 8kcdAD1nbfR6gQcp8TT5LBx/VpBNo8fvyn836Tj5I9N7jx1cVSFJ4sk53jXtFg/hfIRxawJ+rgmb4UU8g6RCww==
+releaseDate: '2026-01-22T13:32:22.936Z'
+</file>
+
+<file path="docker-compose.yml">
+version: '3.8'
+services:
+  express-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MASTER_DB_NAME=${MASTER_DB_NAME}
+      - MASTER_DB_HOST=${MASTER_DB_HOST:-${DB_HOST}}
+      - MASTER_DB_PORT=${MASTER_DB_PORT:-5432}
+      - MASTER_DB_USER=${MASTER_DB_USER:-${DB_USER}}
+      - MASTER_DB_PASSWORD=${MASTER_DB_PASSWORD:-${DB_PASSWORD}}
+      - MASTER_DB_POOL_MAX=${MASTER_DB_POOL_MAX:-5}
+      - TENANT_DB_POOL_MAX=${TENANT_DB_POOL_MAX:-10}
+      - APPS=${APPS}
+      - DEFAULT_APP=${DEFAULT_APP}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - FILES_ROOT=/app/app/uploads
+      - FILES_PUBLIC_URL=https://ats.s3protection.com/api/files
+      - DEBUG_SEARCH=${DEBUG_SEARCH}
+      - DEBUG_UPLOADS=${DEBUG_UPLOADS}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID}
+      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID}
+      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET}
+      - AZURE_AD_REDIRECT_URI=https://ats.s3protection.com/api/auth/callback
+      - GRAPH_REDIRECT_URI=https://ats.s3protection.com/api/ats/api/ats/graph/callback
+      - OAUTH_TENANT_ID=${OAUTH_TENANT_ID}
+      - OAUTH_API_AUDIENCE=${OAUTH_API_AUDIENCE}
+      - OAUTH_REQUIRED_ROLE=${OAUTH_REQUIRED_ROLE}
+      - REQUIRE_BEARER_FOR_PUBLIC_APPLY=${REQUIRE_BEARER_FOR_PUBLIC_APPLY}
+      - PUBLIC_APP_ALLOWED_ORIGIN=${PUBLIC_APP_ALLOWED_ORIGIN}
+      - GRAPH_PUSH_ENABLED=${GRAPH_PUSH_ENABLED}
+      - GRAPH_NOTIFY_MAILBOX=${GRAPH_NOTIFY_MAILBOX}
+      - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID}
+      - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET}
+      - AUTH_DEBUG=${AUTH_DEBUG}
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
+      - CROSS_SITE_SESSION=1
+    volumes:
+      - ats-server_app_uploads:/app/app/uploads
+    restart: unless-stopped
+    container_name: ats-backend
+    networks:
+      - express-network
+      - root_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      - "traefik.http.routers.ats-api.rule=Host(`ats.s3protection.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.ats-api.entrypoints=websecure"
+      - "traefik.http.routers.ats-api.tls=true"
+      - "traefik.http.routers.ats-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.ats-api.middlewares=ats-stripprefix"
+      - "traefik.http.middlewares.ats-stripprefix.stripprefix.prefixes=/api"
+      - "traefik.http.services.ats.loadbalancer.server.port=3000"
+      - "traefik.http.routers.ats-ws.rule=Host(`ats.s3protection.com`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.ats-ws.entrypoints=websecure"
+      - "traefik.http.routers.ats-ws.tls=true"
+      - "traefik.http.routers.ats-ws.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.ats-ws.service=ats"
+networks:
+  express-network:
+    driver: bridge
+  root_default:
+    external: true
+volumes:
+  ats-server_app_uploads:
+    external: true
+</file>
+
+<file path="services/scoringService.js">
+const qualify = (name) => name.includes(".") ? name : `$
+⋮----
+function getOpenAIClient()
+async function getLatestCandidateScore(db, candidateId)
+async function insertCandidateScore(db, candidateId, payload)
+async function buildCandidateVM(db, candidateId)
+/**
+ * Build candidate scoring context (VM + extracted text)
+ */
+async function buildCandidateScoringContext(db, candidateId, getExtractedTextForUrl)
+async function callOpenAIScore({
+  name,
+  email,
+  jobTitle,
+  location,
+  yearsExperience,
+  expectedSalary,
+  combinedText,
+})
+⋮----
+const num = (v)
+const arr = (v)
+⋮----
+async function generateAndStoreCandidateScore(db, candidateId, options =
+⋮----
+function enqueueCandidateScore(db, candidateId, getExtractedTextForUrl = null)
+</file>
+
+<file path="routes/apps/ats/chatrooms.js">
+async function canAccessChatroom(db, chatroomId, userEmail)
+async function isDepartmentMember(db, departmentId, userEmail)
+function extractNoteMentions(content)
+async function saveNoteMentions(db, messageId, noteIds)
+async function createChatroomForCandidate(db, candidateId, applicationId, departmentId, createdBy)
+⋮----
+// Resolve department ID if not provided
+⋮----
+// Create chatroom
+⋮----
+// Auto-link resume and cover letter
+⋮----
+/**
+ * Middleware to require chatroom access
+ */
+function requireChatroomAccess(req, res, next)
+⋮----
+// Admins always have access
+⋮----
+// ==================== CHATROOM CRUD ====================
+// GET /chatrooms - List chatrooms with search and filters
+⋮----
+// Filter by department
+⋮----
+// Filter by status
+⋮----
+// Default to active only
+⋮----
+// Search by display_name or job_title
+⋮----
+// Non-admins can only see chatrooms based on department membership AND job-level access
+⋮----
+// Add pagination
+⋮----
+// Get total count (exclude LIMIT/OFFSET params which are the last 2)
+⋮----
+// GET /chatrooms/unread-counts - Get unread message counts for all chatrooms
+⋮----
+// GET /chatrooms/by-candidate/:candidateId - Find chatroom for a candidate
+⋮----
+// Find chatrooms for this candidate (return most recent active one)
+⋮----
+// Check access (unless admin)
+⋮----
+// GET /chatrooms/:id - Get single chatroom with attachments
+⋮----
+// Get attachments
+⋮----
+// Update participant record (mark as seen)
+⋮----
+// POST /chatrooms - Create chatroom for candidate
+⋮----
+// Check if user has access to this department (if specified)
+⋮----
+// Get attachments
+⋮----
+// DELETE /admin/chatrooms/:id - Delete chatroom (admin only)
+⋮----
+// Delete chatroom (cascades to messages, attachments, participants)
+⋮----
+// ==================== MESSAGES ====================
+// GET /chatrooms/:id/messages - Get messages (paginated)
+⋮----
+// Pagination by message ID
+⋮----
+// Update last read message
+⋮----
+// Return in chronological order
+⋮----
+// POST /chatrooms/:id/messages - Send message
+⋮----
+// Get user display name
+⋮----
+// Get chatroom info and department members for mention detection
+⋮----
+// Insert message
+⋮----
+// Save note mentions
+⋮----
+// Extract and save user mentions
+⋮----
+// Queue email notifications for users who have email notifications enabled
+⋮----
+// Check if user has email notifications enabled
+⋮----
+// Only queue if both email notifications and mention notifications are enabled
+⋮----
+// Update participant record
+⋮----
+// Emit Socket.IO event for real-time updates
+⋮----
+// Emit notification event for other users
+⋮----
+// Emit specific mention notifications
+⋮----
+// PUT /chatrooms/:id/messages/:msgId - Edit message (author only)
+⋮----
+// Check if user is author or admin
+⋮----
+// Update message
+⋮----
+// Update note mentions
+⋮----
+// Emit Socket.IO event
+⋮----
+// PUT /chatrooms/:id/messages/:msgId/urgent - Toggle urgent status
+⋮----
+// Update message urgent status
+⋮----
+// Emit Socket.IO event
+⋮----
+// DELETE /chatrooms/:id/messages/:msgId - Soft-delete message (admin only)
+⋮----
+// Emit Socket.IO event
+⋮----
+// POST /chatrooms/:id/messages/:msgId/create-note - Convert message to department note
+⋮----
+// Get the message and chatroom info
+⋮----
+// Create department note from message
+⋮----
+// Tag the candidate to this note
+⋮----
+// ==================== ATTACHMENTS ====================
+// GET /chatrooms/:id/attachments - List attachments
+⋮----
+// POST /chatrooms/:id/attachments - Add manual attachment
+⋮----
+// ==================== APPLICANT INFO PANEL ====================
+// GET /chatrooms/:id/applicant-info - Get aggregated candidate info for sidebar panel
+⋮----
+// Get chatroom with candidate and application IDs
+⋮----
+// Build candidate info
+⋮----
+// Build application info
+⋮----
+status: null // Will be fetched below
+⋮----
+// Get latest application stage/status
+⋮----
+// Get AI score
+⋮----
+// Get recent notes tagged to this candidate (last 5)
+⋮----
+// Get documents (resume, cover letter)
+⋮----
+// Get interview status (from application_stages with interview-related status)
+⋮----
+// ==================== TRANSCRIPT SHARING ====================
+⋮----
+// POST /chatrooms/:id/share/pdf - Generate transcript PDF
+⋮----
+// Get chatroom with candidate info
+⋮----
+// Build messages query with optional date filter (exclude deleted)
+⋮----
+// Format display names (capitalize first letter of email prefix)
+⋮----
+/**
+ * Extract @FirstName mentions from message content
+ * Returns array of { name, email } for each mentioned user
+ */
+function extractUserMentions(content, membersList)
+⋮----
+// Match @Word patterns (capitalized first letter typical for names)
+⋮----
+// Find matching member by first name
+⋮----
+// ==================== NOTIFICATION PREFERENCES ====================
+// GET /notification-preferences - Get user's notification preferences
+</file>
+
+<file path="app.js">
+function validateEnvironment()
+⋮----
+// Check auth variables (warn if incomplete set)
+⋮----
+// Check ATS database variables (if different from main DB)
+⋮----
+// Validate numeric values
+⋮----
+function attachAppDb(appId, req)
+⋮----
+function safeFileName(name)
+function safeJoin(root, rel)
+async function ensureDir(dir)
+function getPoolForApp(req)
+function signData(data)
+function buildSignedUrl(key, ttlSeconds = 300)
+⋮----
+// Expose via /files-signed for validation
+⋮----
+function verifySignedParams(key, exp, sig)
+async function getActorUserId(req, db)
+// --- MSAL Configuration ---
+⋮----
+system:
+⋮----
+function buildAuthUrl(req, res, next)
+async function handleAuthRedirect(req, res, next)
+⋮----
+async function getSigningKey(header, callback)
+function verifyBearerToken(token)
+function ensureAuthenticated(req, res, next)
+function resolveApp(req, res, next)
+⋮----
+function ensureAuthenticatedExceptPublic(req, res, next)
+⋮----
+const getExtractedTextForUrl = async (url) =>
+⋮----
+// Get file paths from helpers
+⋮----
+// Strategy 1: Check for pre-extracted text sidecar file
+⋮----
+// Helper for status mapping
+const mapStatusToStage = (status) =>
+const titleCase = (str) =>
+const wrappedBuildCandidateScoringContext = async (
+                db,
+                candidateId
+) =>
+const wrappedGenerateAndStoreCandidateScore = async (
+                db,
+                candidateId,
+                options = {}
+) =>
+const wrappedEnqueueCandidateScore = (db, candidateId) =>
+⋮----
+function getKeyFromReq(req)
+async function streamFile(res, absPath, fileName, asAttachment)
+⋮----
+async function processPendingMentionEmails()
+function startMentionEmailBatchProcessor()
+⋮----
+// Fallback: strip origin and extract path after /files/ or /api/files/
+// Handles URLs like https://ats.s3protection.com/api/files/ats/applications/...
+⋮----
+// Match /files/... or /api/files/... and extract the storage key
+⋮----
+// Last resort: use path without leading slash
+</file>
+
+</files>

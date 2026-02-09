@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@azure/msal-node": "^2.8.1",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.5.0",
     "axios": "^1.7.2",
     "connect-pg-simple": "^10.0.0",
     "dotenv": "^16.4.5",

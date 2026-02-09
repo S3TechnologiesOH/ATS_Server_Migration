@@ -8,6 +8,7 @@ const express = require("express");
 const crypto = require("crypto");
 const axios = require("axios");
 const router = express.Router();
+const { isAdmin, DEFAULT_SCHEMA } = require("./helpers");
 
 // MSAL configuration - will be initialized if env vars are present
 let graphMsal = null;
@@ -25,6 +26,48 @@ const GRAPH_SCOPES = [
 // Graph redirect URI - configured via env
 const GRAPH_REDIRECT_URI = process.env.GRAPH_REDIRECT_URI ||
   "https://ats.s3protection.com/api/ats/api/ats/graph/callback";
+
+// Admin consent callback redirect URI
+const GRAPH_ADMIN_CONSENT_REDIRECT_URI =
+  process.env.GRAPH_ADMIN_CONSENT_REDIRECT_URI ||
+  GRAPH_REDIRECT_URI.replace("/graph/callback", "/graph/admin-consent-callback");
+
+// --- Admin consent status (in-memory cache + DB persistence) ---
+let adminConsentGranted = null; // null = unknown, true/false = known
+
+async function checkStoredConsentStatus(db) {
+  try {
+    const { rows } = await db.query(
+      `SELECT value FROM ${DEFAULT_SCHEMA}.app_settings WHERE key = 'graph_admin_consent_granted'`
+    );
+    if (rows.length > 0) {
+      adminConsentGranted = rows[0].value === "true";
+    }
+  } catch {
+    // Table may not exist yet — that's fine
+  }
+}
+
+async function storeConsentStatus(db, granted) {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ${DEFAULT_SCHEMA}.app_settings (
+        key VARCHAR(255) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+    await db.query(
+      `INSERT INTO ${DEFAULT_SCHEMA}.app_settings (key, value, updated_at)
+       VALUES ('graph_admin_consent_granted', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [granted ? "true" : "false"]
+    );
+    adminConsentGranted = granted;
+  } catch (e) {
+    console.error("[graph] Failed to store consent status:", e.message);
+  }
+}
 
 /**
  * Initialize the graph router with MSAL client
@@ -142,6 +185,112 @@ router.get("/graph/status", (req, res) => {
   if (!g) return res.json({ authenticated: false });
   const expiresInSec = Math.max(0, Math.floor((g.expiresAt - Date.now()) / 1000));
   res.json({ authenticated: true, expiresInSec });
+});
+
+// ==================== ADMIN CONSENT ====================
+
+// GET /graph/consent-status - Check if admin consent has been granted
+router.get("/graph/consent-status", async (req, res) => {
+  if (!graphMsal) {
+    return res.json({ consented: false, reason: "graph_not_configured" });
+  }
+  if (adminConsentGranted === null && req.db) {
+    await checkStoredConsentStatus(req.db);
+  }
+  return res.json({ consented: adminConsentGranted === true });
+});
+
+// GET /graph/admin-consent - Start admin consent flow (admin only)
+router.get("/graph/admin-consent", (req, res) => {
+  if (!isAdmin(req)) {
+    return res.status(403).json({ error: "forbidden", message: "Admin access required" });
+  }
+  if (!graphMsal) {
+    return res.status(500).json({ error: "graph_not_configured" });
+  }
+
+  const tenantId = process.env.AZURE_AD_TENANT_ID;
+  const clientId = process.env.AZURE_AD_CLIENT_ID;
+  if (!tenantId || !clientId) {
+    return res.status(500).json({ error: "azure_not_configured" });
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  req.session.adminConsentState = state;
+
+  const consentUrl =
+    `https://login.microsoftonline.com/${tenantId}/adminconsent` +
+    `?client_id=${encodeURIComponent(clientId)}` +
+    `&redirect_uri=${encodeURIComponent(GRAPH_ADMIN_CONSENT_REDIRECT_URI)}` +
+    `&state=${state}`;
+
+  res.redirect(consentUrl);
+});
+
+// GET /graph/admin-consent-callback - Handle admin consent result from Microsoft
+router.get("/graph/admin-consent-callback", async (req, res) => {
+  const { admin_consent, state, error, error_description } = req.query;
+
+  // Escape HTML to prevent XSS from query parameters
+  const esc = (s) =>
+    String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  if (!state || state !== req.session.adminConsentState) {
+    return res.send(`
+      <html><body style="font-family:system-ui,sans-serif;max-width:500px;margin:60px auto;text-align:center;">
+        <h2 style="color:#dc3545;">Admin Consent Failed</h2>
+        <p>Invalid state parameter. Please try again.</p>
+        <script>
+          if (window.opener) window.opener.postMessage({ type: 'admin-consent-result', success: false, error: 'invalid_state' }, '*');
+          setTimeout(() => window.close(), 3000);
+        </script>
+      </body></html>
+    `);
+  }
+
+  delete req.session.adminConsentState;
+
+  if (error) {
+    return res.send(`
+      <html><body style="font-family:system-ui,sans-serif;max-width:500px;margin:60px auto;text-align:center;">
+        <h2 style="color:#dc3545;">Admin Consent Failed</h2>
+        <p>${esc(error_description || error)}</p>
+        <script>
+          if (window.opener) window.opener.postMessage({ type: 'admin-consent-result', success: false, error: '${esc(error)}' }, '*');
+          setTimeout(() => window.close(), 5000);
+        </script>
+      </body></html>
+    `);
+  }
+
+  if (admin_consent === "True") {
+    if (req.db) {
+      await storeConsentStatus(req.db, true);
+    } else {
+      adminConsentGranted = true;
+    }
+    return res.send(`
+      <html><body style="font-family:system-ui,sans-serif;max-width:500px;margin:60px auto;text-align:center;">
+        <h2 style="color:#28a745;">Admin Consent Granted</h2>
+        <p>Microsoft Graph permissions have been granted for your organization. You can close this window.</p>
+        <script>
+          if (window.opener) window.opener.postMessage({ type: 'admin-consent-result', success: true }, '*');
+          setTimeout(() => window.close(), 2000);
+        </script>
+      </body></html>
+    `);
+  }
+
+  res.send(`
+    <html><body style="font-family:system-ui,sans-serif;max-width:500px;margin:60px auto;text-align:center;">
+      <h2 style="color:#856404;">Admin Consent — Unknown Result</h2>
+      <p>Unexpected response from Microsoft. Please try again.</p>
+      <script>
+        if (window.opener) window.opener.postMessage({ type: 'admin-consent-result', success: false, error: 'unknown' }, '*');
+        setTimeout(() => window.close(), 3000);
+      </script>
+    </body></html>
+  `);
 });
 
 // ==================== GRAPH USERS ====================
