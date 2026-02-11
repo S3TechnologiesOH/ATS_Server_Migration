@@ -499,10 +499,6 @@ const OIDC_SCOPES = [
   "email",
   "offline_access",
   "User.Read",
-  "Calendars.ReadWrite",
-  "Mail.ReadWrite",
-  "Mail.Send",
-  "People.Read",
 ];
 
 function buildAuthUrl(req, res, next) {
@@ -559,15 +555,38 @@ async function handleAuthRedirect(req, res, next) {
 
     req.session.user = user;
 
-    // Populate Graph session so requireGraphAuth is satisfied immediately
-    // (no separate /graph/login popup needed)
-    req.session.graph = {
-      accessToken: response.accessToken,
-      refreshToken: response.refreshToken || null,
-      expiresAt: response.expiresOn
-        ? response.expiresOn.getTime()
-        : Date.now() + 55 * 60 * 1000,
-    };
+    // Attempt to silently acquire a Graph token with elevated scopes.
+    // Succeeds only if admin consent has already been granted for the tenant.
+    // If it fails, Graph features stay disabled until the user completes the
+    // separate /graph/login popup or an admin grants org-wide consent.
+    try {
+      const graphScopes = [
+        "User.Read",
+        "Calendars.ReadWrite",
+        "Mail.ReadWrite",
+        "Mail.Send",
+        "People.Read",
+      ];
+      const silentResult = await msalClient.acquireTokenSilent({
+        account: response.account,
+        scopes: graphScopes,
+      });
+      if (silentResult && silentResult.accessToken) {
+        req.session.graph = {
+          accessToken: silentResult.accessToken,
+          refreshToken: silentResult.refreshToken || null,
+          expiresAt: silentResult.expiresOn
+            ? silentResult.expiresOn.getTime()
+            : Date.now() + 55 * 60 * 1000,
+        };
+        console.log("[Auth] Silent Graph token acquired successfully");
+      }
+    } catch (silentErr) {
+      console.log(
+        "[Auth] Silent Graph token acquisition skipped (admin consent may be required):",
+        silentErr.message || silentErr
+      );
+    }
 
     delete req.session.authState;
     delete req.session.authNonce;
