@@ -508,8 +508,12 @@ router.get("/meetings", async (req, res) => {
 // ==================== EMAILS ====================
 // GET /emails - List email threads for a specific address
 router.get("/emails", async (req, res) => {
+  console.log("[Emails] GET /emails hit, query:", req.query, "hasGraphToken:", !!getGraphToken(req));
   const token = getGraphToken(req);
-  if (!token) return res.status(401).json({ error: "graph_auth_required" });
+  if (!token) {
+    console.log("[Emails] No graph token in session — returning 401");
+    return res.status(401).json({ error: "graph_auth_required" });
+  }
 
   const email = req.query.email;
   const top = parseInt(req.query.top, 10) || 50;
@@ -558,10 +562,12 @@ router.get("/emails", async (req, res) => {
         new Date(a.messages[a.messages.length - 1].receivedDateTime)
     );
 
+    console.log("[Emails] Returning", threads.length, "threads");
     res.json({ success: true, threads });
   } catch (e) {
     const status = e.response?.status || 500;
     const detail = e.response?.data ? JSON.stringify(e.response.data).slice(0, 800) : e.message;
+    console.error("[Emails] Graph API error:", status, detail);
     res.status(status).json({ success: false, error: "graph_email_error", detail });
   }
 });
