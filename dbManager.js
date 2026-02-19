@@ -70,6 +70,13 @@ class DbManager {
   }
 
   /**
+   * Get all cached tenant configurations
+   */
+  getAllTenantConfigs() {
+    return Array.from(this.tenantConfigs.values());
+  }
+
+  /**
    * Get the master database pool
    */
   getMasterDb() {
@@ -335,7 +342,7 @@ class DbManager {
   /**
    * Add a user to a tenant's allowlist
    */
-  async addTenantUser(tenantId, email, role = 'user', invitedById = null, firstName = null, lastName = null) {
+  async addTenantUser(tenantId, email, role = 'user', invitedById = null, firstName = null, lastName = null, microsoftOid = null) {
     const normalized = email.toLowerCase().trim();
 
     // Check seat limit
@@ -352,17 +359,18 @@ class DbManager {
     }
 
     const result = await this.masterPool.query(
-      `INSERT INTO tenant_users (tenant_id, email, first_name, last_name, role, is_active, invited_by, invited_at)
-       VALUES ($1, $2, $3, $4, $5, true, $6, NOW())
+      `INSERT INTO tenant_users (tenant_id, email, first_name, last_name, role, is_active, invited_by, invited_at, microsoft_oid)
+       VALUES ($1, $2, $3, $4, $5, true, $6, NOW(), $7)
        ON CONFLICT (tenant_id, email) DO UPDATE SET
          role = EXCLUDED.role,
          first_name = COALESCE(EXCLUDED.first_name, tenant_users.first_name),
          last_name = COALESCE(EXCLUDED.last_name, tenant_users.last_name),
+         microsoft_oid = COALESCE(EXCLUDED.microsoft_oid, tenant_users.microsoft_oid),
          is_active = CASE WHEN tenant_users.is_active = false THEN true ELSE tenant_users.is_active END,
          invited_by = EXCLUDED.invited_by,
          invited_at = NOW()
        RETURNING *`,
-      [tenantId, normalized, firstName, lastName, role, invitedById]
+      [tenantId, normalized, firstName, lastName, role, invitedById, microsoftOid]
     );
     return result.rows[0];
   }

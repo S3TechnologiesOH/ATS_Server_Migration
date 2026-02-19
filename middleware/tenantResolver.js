@@ -91,6 +91,59 @@ async function lookupUserTenant(email, microsoftOid = null) {
 }
 
 /**
+ * Auto-provision a user into a tenant based on email domain matching.
+ * Called when lookupUserTenant returns null (user not in tenant_users).
+ * Checks cached tenant configs for a matching email_domains + allow_auto_provision.
+ */
+async function autoProvisionUser(email, microsoftOid = null, displayName = null) {
+  if (!dbManager.isInitialized()) return null;
+
+  const normalized = (email || '').toLowerCase().trim();
+  if (!normalized) return null;
+
+  const domain = normalized.split('@')[1];
+  if (!domain) return null;
+
+  const allTenants = dbManager.getAllTenantConfigs();
+
+  for (const tenant of allTenants) {
+    if (!tenant.is_active) continue;
+    if (!tenant.allow_auto_provision) continue;
+    if (!Array.isArray(tenant.email_domains) || tenant.email_domains.length === 0) continue;
+
+    const domainMatch = tenant.email_domains
+      .map(d => d.toLowerCase().trim())
+      .includes(domain);
+    if (!domainMatch) continue;
+
+    try {
+      let firstName = null, lastName = null;
+      if (displayName) {
+        const parts = displayName.trim().split(' ');
+        firstName = parts[0] || null;
+        lastName = parts.slice(1).join(' ') || null;
+      }
+
+      await dbManager.addTenantUser(
+        tenant.id, normalized, 'user', null, firstName, lastName, microsoftOid
+      );
+
+      console.log('[TenantResolver] Auto-provisioned user:', normalized,
+        'for tenant:', tenant.company_name, '(id:', tenant.id, ')');
+
+      return await lookupUserTenant(normalized, microsoftOid);
+    } catch (err) {
+      console.error('[TenantResolver] Auto-provision failed for tenant',
+        tenant.id, ':', err.message);
+      continue;
+    }
+  }
+
+  console.log('[TenantResolver] No auto-provision match for domain:', domain);
+  return null;
+}
+
+/**
  * Main tenant resolution middleware
  * Reads tenant from session (set during login)
  */
@@ -170,7 +223,13 @@ async function resolveTenantFromSession(req, res, next) {
  */
 async function setTenantInSession(req, email, microsoftOid = null, displayName = null) {
   console.log('[TenantResolver] setTenantInSession called for email:', email);
-  const tenantInfo = await lookupUserTenant(email, microsoftOid);
+  let tenantInfo = await lookupUserTenant(email, microsoftOid);
+
+  // If user not found, attempt auto-provisioning by email domain
+  if (!tenantInfo) {
+    console.log('[TenantResolver] User not found, attempting auto-provision for:', email);
+    tenantInfo = await autoProvisionUser(email, microsoftOid, displayName);
+  }
 
   console.log('[TenantResolver] tenantInfo:', tenantInfo);
   console.log('[TenantResolver] session.user exists:', !!req.session?.user);
@@ -239,6 +298,7 @@ function requireTenantAccess(req, res, next) {
 
 module.exports = {
   lookupUserTenant,
+  autoProvisionUser,
   resolveTenantFromSession,
   setTenantInSession,
   requireTenantAdmin,

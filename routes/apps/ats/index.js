@@ -54,6 +54,7 @@ const rejectionRouter = require("./rejection");
 const miscRouter = require("./misc");
 const shareRouter = require("./share");
 const chatroomsRouter = require("./chatrooms");
+const tenantUsersRouter = require("./tenantUsers");
 
 // Import helpers for initialization
 const helpers = require("./helpers");
@@ -68,6 +69,7 @@ router.use("/candidates", candidatesRouter);
 router.use("/jobs", jobsRouter);
 router.use("/applications", applicationsRouter);
 router.use("/admin", adminRouter);
+router.use("/tenant-users", tenantUsersRouter);
 router.use("/chatrooms", chatroomsRouter);
 router.use("/", graphRouter); // Graph routes have their own prefixes (/graph/*, /meetings, /emails)
 router.use("/reports", reportsRouter);
