@@ -4,13 +4,17 @@
 
 const { Pool } = require('pg');
 
+// Master DB name - same default used by dbManager.js
+const MASTER_DB = process.env.MASTER_DB_NAME || 'ats-master';
+
 function buildPoolConfig(appId) {
   const prefix = appId.toUpperCase();
   const env = process.env;
   return {
     host: env[`${prefix}_DB_HOST`] || env.DB_HOST || 'postgres-db',
     port: parseInt(env[`${prefix}_DB_PORT`] || env.DB_PORT || '5432', 10),
-    database: env[`${prefix}_DB_NAME`] || env.DB_NAME,
+    // Use app-specific DB, then fall back to master DB (not legacy DB_NAME which may not exist)
+    database: env[`${prefix}_DB_NAME`] || MASTER_DB,
     user: env[`${prefix}_DB_USER`] || env.DB_USER,
     password: env[`${prefix}_DB_PASSWORD`] || env.DB_PASSWORD,
     max: parseInt(env[`${prefix}_DB_POOL_MAX`] || env.DB_POOL_MAX || '10', 10),
@@ -20,9 +24,18 @@ function buildPoolConfig(appId) {
 
 function initPools(appIds) {
   const pools = {};
+
   for (const id of appIds) {
     const cfg = buildPoolConfig(id);
+
     pools[id] = new Pool(cfg);
+    pools[id].on('error', (err) => {
+      if (!pools[id]._errorLogged) {
+        console.error(`❌ Pool error for app '${id}' (${cfg.database}):`, err.message);
+        pools[id]._errorLogged = true;
+      }
+    });
+
     pools[id].connect()
       .then(client => { console.log(`✅ DB connected for app '${id}' (${cfg.database})`); client.release(); })
       .catch(e => console.error(`❌ DB connection failed for app '${id}':`, e.message));
