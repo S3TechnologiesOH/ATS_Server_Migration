@@ -51,6 +51,9 @@ CREATE TABLE tenants (
   favicon_url VARCHAR(500),
   custom_css TEXT,
 
+  -- AI configuration: { provider: "openai"|"google", model: "gpt-4o-mini", api_key: "..." }
+  ai_config JSONB DEFAULT '{}'::jsonb,
+
   -- Status
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),

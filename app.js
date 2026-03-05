@@ -1400,6 +1400,198 @@ app.put("/tenant/branding", ensureAuthenticated, async (req, res) => {
   }
 });
 
+// =========================================================================
+// Tenant AI Configuration
+// =========================================================================
+
+/**
+ * @openapi
+ * /tenant/ai-config:
+ *   get:
+ *     summary: Get tenant AI configuration
+ *     security:
+ *       - SessionCookie: []
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: No tenant access }
+ */
+app.get("/tenant/ai-config", ensureAuthenticated, async (req, res) => {
+  const { user } = req.session;
+  if (!user?.tenantId) {
+    return res.status(403).json({
+      error: "no_tenant_access",
+      message: "User is not associated with a tenant",
+    });
+  }
+
+  try {
+    const masterDb = dbManager.getMasterDb();
+
+    // Ensure ai_config column exists
+    await masterDb.query(`
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ai_config JSONB DEFAULT '{}'::jsonb
+    `);
+
+    const result = await masterDb.query(
+      `SELECT ai_config FROM tenants WHERE id = $1`,
+      [user.tenantId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "tenant_not_found" });
+    }
+
+    const cfg = result.rows[0].ai_config || {};
+
+    // Mask the API key for security
+    let maskedKey = "";
+    if (cfg.api_key) {
+      const key = cfg.api_key;
+      maskedKey = key.length > 8
+        ? key.slice(0, 4) + "..." + key.slice(-4)
+        : "****";
+    }
+
+    res.json({
+      provider: cfg.provider || "openai",
+      model: cfg.model || (process.env.OPENAI_MODEL || "gpt-4o-mini"),
+      has_key: !!(cfg.api_key || process.env.OPENAI_API_KEY),
+      masked_key: maskedKey || (process.env.OPENAI_API_KEY ? "(env default)" : ""),
+    });
+  } catch (err) {
+    console.error("[AI Config] Error fetching ai config:", err.message);
+    res.status(500).json({ error: "server_error", message: err.message });
+  }
+});
+
+/**
+ * @openapi
+ * /tenant/ai-config:
+ *   put:
+ *     summary: Update tenant AI configuration
+ *     security:
+ *       - SessionCookie: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               provider: { type: string, enum: [openai, google] }
+ *               model: { type: string }
+ *               api_key: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       403: { description: Not tenant admin }
+ */
+app.put("/tenant/ai-config", ensureAuthenticated, async (req, res) => {
+  const { user } = req.session;
+  if (!user?.tenantId) {
+    return res.status(403).json({
+      error: "no_tenant_access",
+      message: "User is not associated with a tenant",
+    });
+  }
+
+  if (user.tenantRole !== "admin") {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "Only tenant administrators can update AI configuration",
+    });
+  }
+
+  const { provider, model, api_key } = req.body;
+
+  // Validate provider
+  const validProviders = ["openai", "google"];
+  if (provider && !validProviders.includes(provider)) {
+    return res.status(400).json({
+      error: "invalid_provider",
+      message: "Provider must be one of: " + validProviders.join(", "),
+    });
+  }
+
+  try {
+    const masterDb = dbManager.getMasterDb();
+
+    // Ensure ai_config column exists
+    await masterDb.query(`
+      ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ai_config JSONB DEFAULT '{}'::jsonb
+    `);
+
+    // Get current config so we can merge (don't lose api_key if not provided)
+    const current = await masterDb.query(
+      `SELECT ai_config FROM tenants WHERE id = $1`,
+      [user.tenantId]
+    );
+
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: "tenant_not_found" });
+    }
+
+    const existing = current.rows[0].ai_config || {};
+    const updated = {
+      provider: provider || existing.provider || "openai",
+      model: model || existing.model || "gpt-4o-mini",
+      api_key: api_key !== undefined ? api_key : existing.api_key,
+    };
+
+    const result = await masterDb.query(
+      `UPDATE tenants SET ai_config = $2, updated_at = NOW()
+       WHERE id = $1
+       RETURNING ai_config`,
+      [user.tenantId, JSON.stringify(updated)]
+    );
+
+    // Return masked response
+    let maskedKey = "";
+    if (updated.api_key) {
+      const key = updated.api_key;
+      maskedKey = key.length > 8
+        ? key.slice(0, 4) + "..." + key.slice(-4)
+        : "****";
+    }
+
+    res.json({
+      success: true,
+      provider: updated.provider,
+      model: updated.model,
+      has_key: !!updated.api_key,
+      masked_key: maskedKey,
+    });
+  } catch (err) {
+    console.error("[AI Config] Error updating ai config:", err.message);
+    res.status(500).json({ error: "server_error", message: err.message });
+  }
+});
+
+/**
+ * Internal helper: get resolved AI config for a tenant (used by services)
+ * Returns { provider, model, apiKey } with env var fallbacks
+ */
+app.getTenantAiConfig = async function (tenantId) {
+  try {
+    const masterDb = dbManager.getMasterDb();
+    const result = await masterDb.query(
+      `SELECT ai_config FROM tenants WHERE id = $1`,
+      [tenantId]
+    );
+    const cfg = result.rows?.[0]?.ai_config || {};
+    return {
+      provider: cfg.provider || "openai",
+      model: cfg.model || (process.env.OPENAI_MODEL || "gpt-4o-mini"),
+      apiKey: cfg.api_key || (cfg.provider === "google" ? process.env.GOOGLE_API_KEY : process.env.OPENAI_API_KEY) || "",
+    };
+  } catch {
+    return {
+      provider: "openai",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      apiKey: process.env.OPENAI_API_KEY || "",
+    };
+  }
+};
+
 // Multi-app API router
 const multiApi = express.Router({ mergeParams: true });
 multiApi.use(resolveApp, ensureAuthenticated);

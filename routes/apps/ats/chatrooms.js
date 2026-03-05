@@ -1176,6 +1176,31 @@ router.get("/:id/applicant-info", requireChatroomAccess, async (req, res) => {
 const { generateChatroomTranscriptPDF, generateAISummaryPDF } = require("../../../services/pdfService");
 const emailService = require("../../../services/emailService");
 const { generateChatroomSummary } = require("../../../services/aiSummaryService");
+const dbManager = require("../../../dbManager");
+const config = require("../../../config");
+
+/**
+ * Get resolved AI config for the current tenant (falls back to env vars)
+ */
+async function getTenantAiConfig(req) {
+  try {
+    const tenantId = req.session?.user?.tenantId;
+    if (!tenantId) return null;
+    const masterDb = dbManager.getMasterDb();
+    const { rows } = await masterDb.query(
+      `SELECT ai_config FROM tenants WHERE id = $1`,
+      [tenantId]
+    );
+    const cfg = rows?.[0]?.ai_config || {};
+    return {
+      provider: cfg.provider || "openai",
+      model: cfg.model || (config.ai.openaiModel || "gpt-4o-mini"),
+      apiKey: cfg.api_key || (cfg.provider === "google" ? config.ai.googleApiKey : config.ai.openaiApiKey) || "",
+    };
+  } catch {
+    return null;
+  }
+}
 
 // POST /chatrooms/:id/share/pdf - Generate transcript PDF
 router.post("/:id/share/pdf", requireChatroomAccess, async (req, res) => {
@@ -1460,13 +1485,14 @@ router.post("/:id/share/ai-summary/pdf", requireChatroomAccess, async (req, res)
       job_title: chatroom.job_title,
     };
 
-    // Generate AI summary
+    // Get tenant AI config and generate summary
+    const aiConfig = await getTenantAiConfig(req);
     const summary = await generateChatroomSummary({
       messages,
       candidate,
       jobTitle: chatroom.job_title,
       dateRange: { label: dateRangeLabel, startDate, endDate },
-    });
+    }, aiConfig);
 
     // Get tenant branding
     let branding = { companyName: "Company", primaryColor: "#2d5a27" };
@@ -1577,13 +1603,14 @@ router.post("/:id/share/ai-summary/email", requireChatroomAccess, async (req, re
       job_title: chatroom.job_title,
     };
 
-    // Generate AI summary
+    // Get tenant AI config and generate summary
+    const aiConfig = await getTenantAiConfig(req);
     const summary = await generateChatroomSummary({
       messages,
       candidate,
       jobTitle: chatroom.job_title,
       dateRange: { label: dateRangeLabel, startDate, endDate },
-    });
+    }, aiConfig);
 
     // Get tenant branding
     let branding = { companyName: "Company", primaryColor: "#2d5a27" };
