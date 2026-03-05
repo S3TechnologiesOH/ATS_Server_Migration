@@ -1,8 +1,8 @@
-version: 1.3.9
+version: 1.3.10
 files:
-  - url: Application Management Dashboard Setup 1.3.9.exe
-    sha512: YB3ySh/UM6AJMrRKdVmLRByKpbZWDqtxCx4PHzFkm+RdRfxwUOGYGhsbtxwHLCwS77oioG4+aMIFgWPFkMhFyg==
-    size: 79324839
-path: Application Management Dashboard Setup 1.3.9.exe
-sha512: YB3ySh/UM6AJMrRKdVmLRByKpbZWDqtxCx4PHzFkm+RdRfxwUOGYGhsbtxwHLCwS77oioG4+aMIFgWPFkMhFyg==
-releaseDate: '2026-03-05T16:44:07.641Z'
+  - url: Application Management Dashboard Setup 1.3.10.exe
+    sha512: GokBlvVBfu0g1yzMZ7AKpiqx+vmz14Wnz2SkVrSFr5P0SqBGyO/CIpuueJhq0kiMk5y/mW97cZ2Vl9+Nhk9ivA==
+    size: 79326775
+path: Application Management Dashboard Setup 1.3.10.exe
+sha512: GokBlvVBfu0g1yzMZ7AKpiqx+vmz14Wnz2SkVrSFr5P0SqBGyO/CIpuueJhq0kiMk5y/mW97cZ2Vl9+Nhk9ivA==
+releaseDate: '2026-03-05T17:49:30.085Z'
