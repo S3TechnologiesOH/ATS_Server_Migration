@@ -300,6 +300,16 @@ function attachAppDb(appId, req) {
 // Legacy single default pool reference (for old routes that still use 'pool')
 const pool = pools[DEFAULT_APP];
 
+// Session pool uses master database (where the 'session' table lives)
+const sessionPool = new Pool({
+  host: process.env.MASTER_DB_HOST || process.env.DB_HOST || 'postgres-db',
+  port: parseInt(process.env.MASTER_DB_PORT || process.env.DB_PORT || '5432', 10),
+  database: process.env.MASTER_DB_NAME || 'ats-master',
+  user: process.env.MASTER_DB_USER || process.env.DB_USER,
+  password: process.env.MASTER_DB_PASSWORD || process.env.DB_PASSWORD,
+  max: 3,
+});
+
 // --- Middleware ---
 app.set("trust proxy", 1); // if behind reverse proxy (needed for secure cookies)
 
@@ -353,8 +363,8 @@ const CROSS_SITE = process.env.CROSS_SITE_SESSION === "1";
 app.use(
   session({
     store: new pgSession({
-      pool: pool, // Use the default app pool for session storage
-      tableName: "session", // Table name (will be created automatically)
+      pool: sessionPool, // Use master database pool where session table lives
+      tableName: "session",
       createTableIfMissing: true,
     }),
     secret: SESSION_SECRET,
