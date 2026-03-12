@@ -18,6 +18,19 @@ const {
 
 const dbManager = require("../../../dbManager");
 
+// Resolve tenant DB from ?tenant= query param (for public/unauthenticated requests)
+async function resolveTenantDb(req) {
+  const subdomain = req.query.tenant;
+  if (!subdomain || !dbManager.isInitialized()) return null;
+  try {
+    const tenant = await dbManager.getTenantBySubdomain(subdomain);
+    if (!tenant) return null;
+    return await dbManager.getTenantDb(tenant.id);
+  } catch {
+    return null;
+  }
+}
+
 // Dependencies injected via init
 let getLatestCandidateScore = null;
 let generateAndStoreCandidateScore = null;
@@ -51,6 +64,7 @@ async function generateNextRequisitionId(db) {
 // GET /jobs - List job listings
 router.get("/", async (req, res) => {
   try {
+    const db = (await resolveTenantDb(req)) || req.db;
     const filters = {
       status: req.query.status,
       q: req.query.q,
@@ -78,7 +92,7 @@ router.get("/", async (req, res) => {
       clauses.push(`LOWER(TRIM(department)) = LOWER(TRIM($${params.length}))`);
     }
 
-    const { rows } = await req.db.query(
+    const { rows } = await db.query(
       `
       SELECT
         jl.*,
@@ -101,7 +115,8 @@ router.get("/", async (req, res) => {
 // GET /jobs/public - Public endpoint that only returns Open jobs (no auth required)
 router.get("/public", async (req, res) => {
   try {
-    const { rows } = await req.db.query(
+    const db = (await resolveTenantDb(req)) || req.db;
+    const { rows } = await db.query(
       `SELECT
         job_listing_id,
         job_requisition_id,
