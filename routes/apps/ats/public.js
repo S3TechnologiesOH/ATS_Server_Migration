@@ -41,6 +41,19 @@ function initPublic(deps) {
   }
 }
 
+// Resolve tenant DB from ?tenant= query param or POST body (for public/unauthenticated requests)
+async function resolveTenantDb(req) {
+  const subdomain = req.query.tenant || req.body?.tenant;
+  if (!subdomain || !dbManager.isInitialized()) return null;
+  try {
+    const tenant = await dbManager.getTenantBySubdomain(subdomain);
+    if (!tenant) return null;
+    return await dbManager.getTenantDb(tenant.id);
+  } catch {
+    return null;
+  }
+}
+
 // CORS helper for public endpoints
 function applyPublicCors(req, res) {
   const allowedOrigin =
@@ -736,6 +749,11 @@ router.post("/applications", async (req, res) => {
   applyPublicCors(req, res);
 
   try {
+    // Resolve tenant DB for unauthenticated public requests
+    const tenantDb = await resolveTenantDb(req);
+    if (tenantDb) {
+      req.db = tenantDb;
+    }
     const {
       email,
       phone,
@@ -981,6 +999,10 @@ router.post("/applications/:applicationId/upload/resume", upload.single("file"),
   applyPublicCors(req, res);
 
   try {
+    // Resolve tenant DB for unauthenticated public requests
+    const tenantDb = await resolveTenantDb(req);
+    if (tenantDb) req.db = tenantDb;
+
     const applicationId = parseInt(req.params.applicationId, 10);
     if (!Number.isFinite(applicationId))
       return res.status(400).json({ error: "invalid_application" });
@@ -1040,6 +1062,10 @@ router.post("/applications/:applicationId/upload/cover-letter", upload.single("f
   applyPublicCors(req, res);
 
   try {
+    // Resolve tenant DB for unauthenticated public requests
+    const tenantDb = await resolveTenantDb(req);
+    if (tenantDb) req.db = tenantDb;
+
     const applicationId = parseInt(req.params.applicationId, 10);
     if (!Number.isFinite(applicationId))
       return res.status(400).json({ error: "invalid_application" });
