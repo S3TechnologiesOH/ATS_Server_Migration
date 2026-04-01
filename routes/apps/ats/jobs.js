@@ -40,6 +40,48 @@ function initJobs(deps) {
   if (deps.generateAndStoreCandidateScore) generateAndStoreCandidateScore = deps.generateAndStoreCandidateScore;
 }
 
+// Ensure job_listings table exists in the tenant database
+async function ensureJobListingsTable(db) {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ${DEFAULT_SCHEMA}.job_listings (
+        job_listing_id SERIAL PRIMARY KEY,
+        job_requisition_id VARCHAR(100) UNIQUE,
+        job_title VARCHAR(200) NOT NULL,
+        department VARCHAR(100),
+        location VARCHAR(120),
+        employment_type VARCHAR(50),
+        status VARCHAR(20) NOT NULL DEFAULT 'open'
+          CHECK (status IN ('open','closed','draft')),
+        description TEXT,
+        requirements TEXT,
+        recruiter_assigned VARCHAR(120),
+        hiring_manager VARCHAR(120),
+        source VARCHAR(120),
+        salary_min INTEGER,
+        salary_max INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        archived BOOLEAN DEFAULT FALSE,
+        archived_at TIMESTAMP,
+        archived_by VARCHAR(120),
+        archive_reason TEXT,
+        role_snapshot TEXT,
+        day_in_the_life TEXT,
+        thrive_here_if TEXT,
+        what_you_bring TEXT,
+        what_s3_brings TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_job_listings_status ON ${DEFAULT_SCHEMA}.job_listings(status);
+      CREATE INDEX IF NOT EXISTS idx_job_listings_department ON ${DEFAULT_SCHEMA}.job_listings(department);
+      CREATE INDEX IF NOT EXISTS idx_job_listings_title ON ${DEFAULT_SCHEMA}.job_listings(job_title);
+      CREATE INDEX IF NOT EXISTS idx_job_listings_archived ON ${DEFAULT_SCHEMA}.job_listings(archived) WHERE archived = TRUE;
+    `);
+  } catch (e) {
+    console.error("[Jobs] ensureJobListingsTable error:", e.message);
+  }
+}
+
 // Helper to generate next requisition id (format: REQ-YYYY-###)
 async function generateNextRequisitionId(db) {
   const year = new Date().getFullYear();
@@ -61,10 +103,18 @@ async function generateNextRequisitionId(db) {
   }
 }
 
+// Track which DBs have been checked for job_listings table
+const _ensuredDbs = new Set();
+
 // GET /jobs - List job listings
 router.get("/", async (req, res) => {
   try {
     const db = (await resolveTenantDb(req)) || req.db;
+    const dbKey = req.tenantId || req.appId || "default";
+    if (!_ensuredDbs.has(dbKey)) {
+      await ensureJobListingsTable(db);
+      _ensuredDbs.add(dbKey);
+    }
     const filters = {
       status: req.query.status,
       q: req.query.q,

@@ -317,27 +317,27 @@ router.get("/", async (req, res) => {
              la.${APP_PK}, jl.job_title, la.job_requisition_id, la.application_date,
              la.expected_salary_range AS expected_salary,
              to_jsonb(la)->>'application_source' AS application_source,
-             COALESCE(NULLIF(to_jsonb(la)->>'resume_url',''), (
-               SELECT to_jsonb(a2)->>'resume_url'
+             COALESCE(NULLIF(la.resume_url,''), (
+               SELECT a2.resume_url
                  FROM ${APP_TABLE} a2
                 WHERE a2.candidate_id = c.${PEOPLE_PK}
-                  AND COALESCE(to_jsonb(a2)->>'resume_url','') <> ''
+                  AND COALESCE(a2.resume_url,'') <> ''
                 ORDER BY a2.application_date DESC NULLS LAST, a2.${APP_PK} DESC
                 LIMIT 1
              )) AS resume_url,
-             COALESCE(NULLIF(to_jsonb(la)->>'cover_letter_url',''), (
-               SELECT to_jsonb(a2)->>'cover_letter_url'
+             COALESCE(NULLIF(la.cover_letter_url,''), (
+               SELECT a2.cover_letter_url
                  FROM ${APP_TABLE} a2
                 WHERE a2.candidate_id = c.${PEOPLE_PK}
-                  AND COALESCE(to_jsonb(a2)->>'cover_letter_url','') <> ''
+                  AND COALESCE(a2.cover_letter_url,'') <> ''
                 ORDER BY a2.application_date DESC NULLS LAST, a2.${APP_PK} DESC
                 LIMIT 1
              )) AS cover_letter_url,
-             COALESCE(NULLIF(COALESCE(to_jsonb(la)->>'photo_url', to_jsonb(la)->>'photo'),''), (
-               SELECT COALESCE(to_jsonb(a2)->>'photo_url', to_jsonb(a2)->>'photo')
+             COALESCE(NULLIF(COALESCE(la.photo_url, to_jsonb(la)->>'photo'),''), (
+               SELECT COALESCE(a2.photo_url, to_jsonb(a2)->>'photo')
                  FROM ${APP_TABLE} a2
                 WHERE a2.candidate_id = c.${PEOPLE_PK}
-                  AND COALESCE(COALESCE(to_jsonb(a2)->>'photo_url',''), COALESCE(to_jsonb(a2)->>'photo','')) <> ''
+                  AND COALESCE(COALESCE(a2.photo_url,''), COALESCE(to_jsonb(a2)->>'photo','')) <> ''
                 ORDER BY a2.application_date DESC NULLS LAST, a2.${APP_PK} DESC
                 LIMIT 1
              )) AS photo_url,
@@ -464,10 +464,10 @@ router.get("/archived", async (req, res) => {
              jl.job_title,
              la.job_requisition_id,
              la.application_date,
-             to_jsonb(la)->>'expected_salary' AS expected_salary,
+             la.expected_salary_range AS expected_salary,
              to_jsonb(la)->>'years_experience' AS years_experience,
-             to_jsonb(la)->>'resume_url' AS resume_url,
-             to_jsonb(la)->>'cover_letter_url' AS cover_letter_url,
+             la.resume_url,
+             la.cover_letter_url,
              to_jsonb(la)->>'application_source' AS application_source,
              jl.recruiter_assigned,
              jl.hiring_manager AS hiring_manager_assigned,
