@@ -222,8 +222,11 @@ async function buildCandidateVM(db, candidateId) {
     yearsExperience: app?.years_experience || "",
     expectedSalary: app?.expected_salary_range || cand?.expected_salary_range || "",
     resumeUrl,
+    resume_url: resumeUrl,
     coverLetterUrl,
+    cover_letter_url: coverLetterUrl,
     photoUrl,
+    photo_url: photoUrl,
   };
 
   console.log(`[buildCandidateVM] Candidate ${candidateId}: resumeUrl=${resumeUrl || '(none)'}, coverLetterUrl=${coverLetterUrl || '(none)'}`);

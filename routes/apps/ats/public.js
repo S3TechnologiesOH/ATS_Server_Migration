@@ -745,7 +745,14 @@ function getOpenIdConnectFullName(profileData) {
 
 // ==================== PUBLIC APPLICATIONS ====================
 // POST /public/applications - Submit a public job application
-router.post("/applications", async (req, res) => {
+router.post("/applications", upload.fields([
+  { name: "resumeFile", maxCount: 1 },
+  { name: "resume", maxCount: 1 },
+  { name: "cv", maxCount: 1 },
+  { name: "coverLetterFile", maxCount: 1 },
+  { name: "cover", maxCount: 1 },
+  { name: "cover_letter", maxCount: 1 },
+]), async (req, res) => {
   applyPublicCors(req, res);
 
   try {
@@ -952,6 +959,44 @@ router.post("/applications", async (req, res) => {
           [applicationId]
         );
       } catch {}
+
+      // Store uploaded resume/cover letter files
+      const resumeFile = req.files?.resumeFile?.[0] || req.files?.resume?.[0] || req.files?.cv?.[0];
+      const coverFile = req.files?.coverLetterFile?.[0] || req.files?.cover?.[0] || req.files?.cover_letter?.[0];
+
+      if (resumeFile) {
+        try {
+          const ext = pickExt(resumeFile.originalname, resumeFile.mimetype);
+          const filename = `resume_${applicationId}_${Date.now()}${ext}`;
+          const appDir = path.join(FILES_ROOT, "applications", String(applicationId));
+          await ensureDir(appDir);
+          await fs.promises.writeFile(path.join(appDir, filename), resumeFile.buffer);
+          const resumeUrl = `${FILES_PUBLIC_URL}/applications/${applicationId}/${filename}`;
+          await req.db.query(
+            `UPDATE ${DEFAULT_SCHEMA}.applications SET resume_url = $1 WHERE application_id = $2`,
+            [resumeUrl, applicationId]
+          );
+        } catch (err) {
+          console.error("[PUBLIC_APPLY] Resume storage error:", err.message);
+        }
+      }
+
+      if (coverFile) {
+        try {
+          const ext = pickExt(coverFile.originalname, coverFile.mimetype);
+          const filename = `cover_${applicationId}_${Date.now()}${ext}`;
+          const appDir = path.join(FILES_ROOT, "applications", String(applicationId));
+          await ensureDir(appDir);
+          await fs.promises.writeFile(path.join(appDir, filename), coverFile.buffer);
+          const coverUrl = `${FILES_PUBLIC_URL}/applications/${applicationId}/${filename}`;
+          await req.db.query(
+            `UPDATE ${DEFAULT_SCHEMA}.applications SET cover_letter_url = $1 WHERE application_id = $2`,
+            [coverUrl, applicationId]
+          );
+        } catch (err) {
+          console.error("[PUBLIC_APPLY] Cover letter storage error:", err.message);
+        }
+      }
 
       // Emit real-time event
       const io = req.app.get("io");
