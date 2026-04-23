@@ -130,14 +130,25 @@ router.get("/departments/:id/applicants", async (req, res) => {
     let sql;
     let params;
 
+    // Latest AI score per candidate (joined via LATERAL)
+    const latestScoreJoin = `LEFT JOIN LATERAL (
+      SELECT overall_score
+        FROM ${DEFAULT_SCHEMA}.candidate_ai_scores s
+       WHERE s.candidate_id = c.${PEOPLE_PK}
+       ORDER BY s.created_at DESC, s.id DESC
+       LIMIT 1
+    ) ai ON TRUE`;
+
     if (admin) {
       // Admins see all applicants
       sql = `
         SELECT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
-               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id
+               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id,
+               ai.overall_score
           FROM ${APP_TABLE} a
           JOIN ${PEOPLE_TABLE} c ON c.${PEOPLE_PK} = a.candidate_id
           LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+          ${latestScoreJoin}
          WHERE jl.department = $1
          ORDER BY a.application_date DESC
          LIMIT 100`;
@@ -146,10 +157,12 @@ router.get("/departments/:id/applicants", async (req, res) => {
       // Non-admins: filter by job access
       sql = `
         SELECT DISTINCT c.${PEOPLE_PK} as candidate_id, c.first_name, c.last_name, c.email,
-               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id
+               a.${APP_PK} as application_id, a.application_date, jl.job_title, jl.job_listing_id,
+               ai.overall_score
           FROM ${APP_TABLE} a
           JOIN ${PEOPLE_TABLE} c ON c.${PEOPLE_PK} = a.candidate_id
           LEFT JOIN ${DEFAULT_SCHEMA}.job_listings jl ON jl.job_requisition_id = a.job_requisition_id
+          ${latestScoreJoin}
           LEFT JOIN ${DEFAULT_SCHEMA}.department_members dm
             ON dm.department_id = $2 AND LOWER(dm.email) = LOWER($3)
          WHERE jl.department = $1
