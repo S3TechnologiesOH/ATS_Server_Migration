@@ -256,9 +256,12 @@ function attachAppDb(appId, req) {
       } -> App: ${appId}, Pool exists: ${!!pools[appId]}`
     );
 
-  // Add database query debugging wrapper
-  if (req.db && req.db.query) {
-    const originalQuery = req.db.query;
+  // Add database query debugging wrapper — wrap each pool exactly once.
+  // req.db is the SHARED pool reference, so reassigning req.db.query mutates
+  // the pool itself. Without this guard, every request would re-wrap the
+  // already-wrapped query, accumulating closures and stack frames over time.
+  if (req.db && req.db.query && !req.db.__queryWrapped) {
+    const originalQuery = req.db.query.bind(req.db);
     req.db.query = async function (sql, params) {
       const startTime = Date.now();
       if (VERBOSE_APP_DEBUG)
@@ -269,7 +272,7 @@ function attachAppDb(appId, req) {
           params || []
         );
       try {
-        const result = await originalQuery.call(this, sql, params);
+        const result = await originalQuery(sql, params);
         const duration = Date.now() - startTime;
         if (VERBOSE_APP_DEBUG) {
           console.log(
@@ -287,13 +290,18 @@ function attachAppDb(appId, req) {
         return result;
       } catch (error) {
         const duration = Date.now() - startTime;
-        // Always log DB errors
         console.log(
           `[DB_ERROR] App: ${appId}, Error: ${error.message}, Duration: ${duration}ms`
         );
         throw error;
       }
     };
+    Object.defineProperty(req.db, "__queryWrapped", {
+      value: true,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
   }
 }
 
