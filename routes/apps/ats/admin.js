@@ -279,12 +279,48 @@ router.put("/departments/:id", requireAdmin, async (req, res) => {
     await ensureAdminTables(req.db);
     const id = parseInt(req.params.id, 10);
     const { name, description, icon } = req.body || {};
-    const r = await req.db.query(
-      `UPDATE ${DEFAULT_SCHEMA}.departments SET name = COALESCE($2,name), description = $3, icon = $4 WHERE id = $1 RETURNING id, name, description, icon, created_at, updated_at`,
-      [id, name || null, description || null, icon !== undefined ? icon : null]
+
+    // Look up the current name first so we can detect a rename. Jobs are linked
+    // to departments by the denormalized job_listings.department text column
+    // (not by department_id), so a rename must cascade to that column or jobs
+    // will silently stop matching the department everywhere it is queried.
+    const existing = await req.db.query(
+      `SELECT name FROM ${DEFAULT_SCHEMA}.departments WHERE id = $1`,
+      [id]
     );
-    if (!r.rows.length) return res.status(404).json({ error: "not_found" });
-    return res.json(r.rows[0]);
+    if (!existing.rows.length) return res.status(404).json({ error: "not_found" });
+    const oldName = existing.rows[0].name;
+    const newName = name || oldName;
+    const isRename = !!name && newName !== oldName;
+
+    await req.db.query("BEGIN");
+    try {
+      const r = await req.db.query(
+        `UPDATE ${DEFAULT_SCHEMA}.departments SET name = COALESCE($2,name), description = $3, icon = $4 WHERE id = $1 RETURNING id, name, description, icon, created_at, updated_at`,
+        [id, name || null, description || null, icon !== undefined ? icon : null]
+      );
+      if (!r.rows.length) {
+        await req.db.query("ROLLBACK");
+        return res.status(404).json({ error: "not_found" });
+      }
+
+      // Cascade the rename to the denormalized department link on jobs.
+      // Case-insensitive match mirrors how jobs are queried elsewhere.
+      let jobsUpdated = 0;
+      if (isRename && oldName) {
+        const jobsRes = await req.db.query(
+          `UPDATE ${DEFAULT_SCHEMA}.job_listings SET department = $1 WHERE LOWER(department) = LOWER($2)`,
+          [newName, oldName]
+        );
+        jobsUpdated = jobsRes.rowCount || 0;
+      }
+
+      await req.db.query("COMMIT");
+      return res.json({ ...r.rows[0], jobs_updated: jobsUpdated });
+    } catch (err) {
+      await req.db.query("ROLLBACK");
+      throw err;
+    }
   } catch (e) {
     return res.status(500).json({ error: "db_error", detail: e.message });
   }
