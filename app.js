@@ -725,8 +725,6 @@ function ensureAuthenticated(req, res, next) {
       console.log("[AUTH_DEBUG] Public bypass", { path: req.path });
     return next();
   }
-  // Allow unauthenticated access to candidate score endpoint: /candidates/:id/score
-  if (/\/candidates\/\d+\/score\/?$/.test(req.path)) return next();
   // Allow unauthenticated read of job listings (GET .../jobs or .../jobs/public) even when mounted with prefixes like /ats/api/ats
   if (
     req.method === "GET" &&
